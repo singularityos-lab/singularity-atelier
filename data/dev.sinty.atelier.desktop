@@ -1,0 +1,24 @@
+[Desktop Entry]
+Name=Atelier
+GenericName=Fashion and Product Design
+Comment=Sketch, make patterns, grade sizes and prepare tech packs
+Exec=singularity-atelier %U
+Icon=dev.sinty.atelier
+Terminal=false
+Type=Application
+Categories=Graphics;VectorGraphics;Engineering;
+MimeType=application/x-atelier;image/vnd.dxf;application/x-seamly2d;application/x-valentina-pattern;application/x-seamly2d-measurements;model/gltf-binary;model/gltf+json;model/obj;
+Keywords=fashion;pattern;sewing;garment;tech pack;grading;dxf;aama;astm;sketch;leather;bag;product;cad;
+StartupWMClass=dev.sinty.atelier
+X-Singularity-Dock-Recent=true
+Actions=new-garment;new-sketch;
+
+[Desktop Action new-garment]
+Name=New Garment
+Icon=document-new-symbolic
+Exec=singularity-atelier --new fashion
+
+[Desktop Action new-sketch]
+Name=New Sketch
+Icon=document-new-symbolic
+Exec=singularity-atelier --new product

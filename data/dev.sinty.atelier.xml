@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-atelier">
+    <comment>Atelier project</comment>
+    <sub-class-of type="application/zip"/>
+    <glob pattern="*.atelier"/>
+  </mime-type>
+  <mime-type type="application/x-seamly2d">
+    <comment>Seamly2D pattern</comment>
+    <sub-class-of type="application/xml"/>
+    <glob pattern="*.sm2d"/>
+    <glob pattern="*.val"/>
+  </mime-type>
+  <mime-type type="application/x-seamly2d-measurements">
+    <comment>Seamly2D measurements</comment>
+    <sub-class-of type="application/xml"/>
+    <glob pattern="*.vit"/>
+    <glob pattern="*.vst"/>
+    <glob pattern="*.smis"/>
+    <glob pattern="*.smms"/>
+  </mime-type>
+  <mime-type type="application/x-valentina-pattern">
+    <comment>Valentina pattern</comment>
+    <sub-class-of type="application/xml"/>
+    <glob pattern="*.val"/>
+  </mime-type>
+</mime-info>

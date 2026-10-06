@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>dev.sinty.atelier</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <name>Atelier</name>
+  <summary>Sketch, make patterns, grade sizes and prepare tech packs</summary>
+  <description>
+    <p>Atelier is for designing physical things: clothes, bags, shoes and products. One project holds the concept sketches, the parametric pattern with its sizes, the technical flats, the tech pack for production and the 3D fitting.</p>
+    <ul>
+      <li>Sketching with pressure and tilt sensitive brushes, rulers, ellipses, French curves, perspective grids and symmetry</li>
+      <li>Parametric pattern making driven by measurement tables, with seam allowances, notches, drill holes, grain lines and darts</li>
+      <li>Grading by rules or by measurements with a nested preview of every size</li>
+      <li>Technical flats with stitch lines, trims, dimensions and numbered callouts</li>
+      <li>Tech packs with points of measure, tolerances, bill of materials and construction steps</li>
+      <li>DXF AAMA and ASTM, Seamly2D, HPGL, SVG, PDF, glTF and OBJ</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">dev.sinty.atelier.desktop</launchable>
+  <url type="bugtracker">https://github.com/singularityos-lab/singularity-desktop/issues</url>
+  <content_rating type="oars-1.1"/>
+</component>

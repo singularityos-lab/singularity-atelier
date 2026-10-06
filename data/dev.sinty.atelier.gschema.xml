@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="dev.sinty.atelier" path="/dev/sinty/atelier/">
+    <key name="units" type="s">
+      <choices>
+        <choice value="cm"/>
+        <choice value="mm"/>
+        <choice value="inch"/>
+      </choices>
+      <default>'cm'</default>
+      <summary>Units used for new patterns and measurements</summary>
+    </key>
+    <key name="default-seam-allowance" type="i">
+      <range min="0" max="100"/>
+      <default>10</default>
+      <summary>Seam allowance for new pattern pieces, in millimetres</summary>
+    </key>
+    <key name="stabilizer" type="i">
+      <range min="0" max="95"/>
+      <default>35</default>
+      <summary>How much sketch strokes are smoothed while drawing, in percent</summary>
+    </key>
+    <key name="hold-to-shape" type="b">
+      <default>true</default>
+      <summary>Holding the pen still at the end of a stroke turns it into a clean line, arc or ellipse</summary>
+    </key>
+    <key name="hold-delay" type="i">
+      <range min="200" max="2000"/>
+      <default>600</default>
+      <summary>Milliseconds to hold the pen still before the stroke is straightened</summary>
+    </key>
+    <key name="predictive-stroke" type="b">
+      <default>false</default>
+      <summary>Clean up every stroke into smooth curves when the pen is lifted</summary>
+    </key>
+    <key name="pressure-curve" type="s">
+      <default>'0.25 0.25 0.75 0.75'</default>
+      <summary>Pen pressure response as a cubic curve</summary>
+    </key>
+    <key name="touch-draws" type="b">
+      <default>false</default>
+      <summary>Draw with a finger on touch screens instead of only moving the canvas</summary>
+    </key>
+    <key name="record-timelapse" type="b">
+      <default>true</default>
+      <summary>Record sketch strokes so the drawing can be replayed as a time-lapse</summary>
+    </key>
+    <key name="print-overlap" type="i">
+      <range min="0" max="50"/>
+      <default>10</default>
+      <summary>Overlap between tiled pattern pages, in millimetres</summary>
+    </key>
+    <key name="plotter-width" type="i">
+      <range min="30" max="400"/>
+      <default>91</default>
+      <summary>Paper width of the plotter, in centimetres</summary>
+    </key>
+    <key name="dxf-flavor" type="s">
+      <choices>
+        <choice value="aama"/>
+        <choice value="astm"/>
+      </choices>
+      <default>'aama'</default>
+      <summary>Default flavour of DXF pattern export</summary>
+    </key>
+    <key name="currency" type="s">
+      <default>'EUR'</default>
+      <summary>Currency of costs in the bill of materials</summary>
+    </key>
+    <key name="simulation-quality" type="s">
+      <choices>
+        <choice value="draft"/>
+        <choice value="normal"/>
+        <choice value="fine"/>
+      </choices>
+      <default>'normal'</default>
+      <summary>Resolution of the cloth simulation</summary>
+    </key>
+  </schema>
+</schemalist>

@@ -1,0 +1,130 @@
+{
+    "schema-id": "dev.sinty.atelier",
+    "settings": [
+        {
+            "key": "units",
+            "label": "Units",
+            "type": "string",
+            "widget": "combo",
+            "options": [
+                {
+                    "id": "cm",
+                    "label": "Centimetres"
+                },
+                {
+                    "id": "mm",
+                    "label": "Millimetres"
+                },
+                {
+                    "id": "inch",
+                    "label": "Inches"
+                }
+            ]
+        },
+        {
+            "key": "default-seam-allowance",
+            "label": "Default Seam Allowance",
+            "type": "int",
+            "widget": "spin",
+            "min": 0,
+            "max": 100,
+            "subtitle": "In millimetres, used for new pieces"
+        },
+        {
+            "key": "stabilizer",
+            "label": "Stroke Stabilizer",
+            "type": "int",
+            "widget": "spin",
+            "min": 0,
+            "max": 95,
+            "subtitle": "In percent; higher values smooth sketch strokes more"
+        },
+        {
+            "key": "hold-to-shape",
+            "label": "Hold to Straighten",
+            "type": "boolean",
+            "widget": "toggle",
+            "subtitle": "Keep the pen still at the end of a stroke to get a clean line, arc or ellipse"
+        },
+        {
+            "key": "predictive-stroke",
+            "label": "Predictive Stroke",
+            "type": "boolean",
+            "widget": "toggle",
+            "subtitle": "Every stroke becomes a smooth curve when the pen is lifted"
+        },
+        {
+            "key": "touch-draws",
+            "label": "Draw with Touch",
+            "type": "boolean",
+            "widget": "toggle",
+            "subtitle": "Otherwise fingers move, zoom and rotate the canvas"
+        },
+        {
+            "key": "record-timelapse",
+            "label": "Record Time-Lapse",
+            "type": "boolean",
+            "widget": "toggle"
+        },
+        {
+            "key": "print-overlap",
+            "label": "Tiled Page Overlap",
+            "type": "int",
+            "widget": "spin",
+            "min": 0,
+            "max": 50,
+            "subtitle": "In millimetres"
+        },
+        {
+            "key": "plotter-width",
+            "label": "Plotter Paper Width",
+            "type": "int",
+            "widget": "spin",
+            "min": 30,
+            "max": 400,
+            "subtitle": "In centimetres"
+        },
+        {
+            "key": "dxf-flavor",
+            "label": "DXF Pattern Format",
+            "type": "string",
+            "widget": "combo",
+            "options": [
+                {
+                    "id": "aama",
+                    "label": "AAMA"
+                },
+                {
+                    "id": "astm",
+                    "label": "ASTM D6673"
+                }
+            ]
+        },
+        {
+            "key": "currency",
+            "label": "Currency",
+            "type": "string",
+            "widget": "entry"
+        },
+        {
+            "key": "simulation-quality",
+            "label": "Cloth Simulation Quality",
+            "type": "string",
+            "widget": "combo",
+            "options": [
+                {
+                    "id": "draft",
+                    "label": "Draft"
+                },
+                {
+                    "id": "normal",
+                    "label": "Normal"
+                },
+                {
+                    "id": "fine",
+                    "label": "Fine"
+                }
+            ]
+        }
+    ]
+}

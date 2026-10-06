@@ -1,0 +1,7 @@
+[Plugin]
+Module=atelier-cut-list
+Name=Cut List
+Description=Exports the list of pieces to cut and adds an example company grade rule
+Authors=Singularity
+Copyright=Singularity
+Website=https://github.com/singularityos-lab/singularity-desktop
