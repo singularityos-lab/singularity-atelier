@@ -296,6 +296,89 @@ void test_fixed_length () {
     check (p.evaluate ().errors.has_key (c.id), "impossible length reported");
 }
 
+Piece square_piece (Pattern p, string id, double w, double h) {
+    var piece = new Piece (id, "Panel");
+    double[,] xy = { { 0, 0 }, { w, 0 }, { w, h }, { 0, h } };
+    for (int k = 0; k < 4; k++) {
+        var pt = p.add_point (PointKind.BASE, "%s%d".printf (id, k));
+        pt.fx = xy[k, 0].to_string ();
+        pt.fy = xy[k, 1].to_string ();
+        piece.nodes.add (new PieceNode (pt.id));
+    }
+    p.pieces.add (piece);
+    return piece;
+}
+
+Rect bounds_of (Point[] pts) {
+    var r = Rect.empty ();
+    foreach (var q in pts) r = r.include (q.x, q.y);
+    return r;
+}
+
+void test_leather () {
+    var p = new Pattern ();
+    p.unit = "mm";
+    var piece = square_piece (p, "L", 100, 50);
+    piece.thickness = 2;
+    Leather.apply_turn (p, piece, "8");
+    var g = p.evaluate ().pieces[0];
+    var r = bounds_of (g.cut);
+    check (near (r.x, -11) && near (r.x2 (), 111) && near (r.y2 (), 61), "turn allowance adds one and a half thicknesses: %.1f to %.1f".printf (r.x, r.x2 ()));
+    var re = Leather.reinforcement (p, g, 5);
+    var rr = bounds_of (re.fixed.seam);
+    check (near (rr.x, 5) && near (rr.y, 5) && near (rr.x2 (), 95) && near (rr.y2 (), 45) && re.material == "reinforcement", "reinforcement inset by 5 mm inside the seam line");
+    var li = Leather.lining (p, g, 2);
+    var lr = bounds_of (li.fixed.seam);
+    var lc = bounds_of (li.fixed.cut);
+    check (near (lr.x, 2) && near (lr.x2 (), 98) && near (lc.x, -8) && near (lc.x2 (), 108) && li.material == "lining", "lining eased by 2 mm with a 10 mm seam allowance");
+    var skive = Leather.skive_line (g, 15);
+    var sr = bounds_of (skive);
+    check (skive.length >= 4 && near (sr.x, r.x + 15) && near (sr.x2 (), r.x2 () - 15), "skive line 15 mm inside the cut edge");
+    double[] ink = {};
+    foreach (string width in new string[] { "", "15" }) {
+        piece.leather_skive = width;
+        var surface = new Cairo.ImageSurface (Cairo.Format.RGB24, 300, 200);
+        var cr = new Cairo.Context (surface);
+        cr.set_source_rgb (1, 1, 1);
+        cr.paint ();
+        cr.scale (2, 2);
+        cr.translate (20, 20);
+        var st = new PatternStyle ();
+        st.zoom = 2;
+        PatternRenderer.draw_piece (cr, p.evaluate ().pieces[0], st, "M");
+        surface.flush ();
+        unowned uchar[] data = surface.get_data ();
+        double dark = 0;
+        for (int y = 70; y < 110; y++) {
+            int o = y * surface.get_stride () + 48 * 4;
+            dark += 255 - (data[o] + data[o + 1] + data[o + 2]) / 3.0;
+        }
+        ink += dark;
+    }
+    piece.leather_skive = "";
+    check (ink[1] > ink[0] + 200, "skiving line drawn inside the piece (%.0f against %.0f)".printf (ink[1], ink[0]));
+    var bag = Solid.box_bag (p, 200, 100, 50, "two-piece", 10);
+    var wrap = bounds_of (bag[0].fixed.seam);
+    var side = bounds_of (bag[1].fixed.seam);
+    check (bag.size == 2 && bag[1].quantity == 2 && near (wrap.h, 2 * side.h + side.w), "box bag wrap panel matches the three sewn edges of the side panel (%.0f mm)".printf (wrap.h));
+}
+
+void test_proofing () {
+    var profiles = ColorManager.system_profiles ();
+    string? cmyk = null;
+    foreach (var path in profiles) if (path.has_suffix ("default_cmyk.icc")) cmyk = path;
+    if (cmyk == null || !ColorManager.available ()) {
+        print ("skip proofing: no CMYK profile installed\n");
+        return;
+    }
+    bool oog;
+    var green = ColorManager.soft_proof (Rgba (0, 1, 0, 1), cmyk, out oog);
+    check (oog && (green.g < 0.95 || green.r > 0.05), "pure screen green is out of the CMYK gamut (%.2f %.2f %.2f)".printf (green.r, green.g, green.b));
+    bool oog2;
+    var grey = ColorManager.soft_proof (Rgba (0.5, 0.5, 0.5, 1), cmyk, out oog2);
+    check (!oog2, "mid grey stays inside the gamut (%.2f %.2f %.2f)".printf (grey.r, grey.g, grey.b));
+}
+
 int main () {
     test_fixed_length ();
     test_expr ();
@@ -303,6 +386,8 @@ int main () {
     test_points ();
     test_tshirt_piece ();
     test_seam_allowance ();
+    test_leather ();
+    test_proofing ();
     test_darts ();
     test_seam_walk ();
     test_grading_rules ();
