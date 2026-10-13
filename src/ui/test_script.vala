@@ -227,6 +227,9 @@ namespace Singularity.Apps.Atelier {
                     c.queue_draw ();
                     return 100;
                 }
+                case "reference":
+                    win.sketch_canvas.add_reference (rest);
+                    return 600;
                 case "vehicle":
                     win.sketch_canvas.add_vehicle_underlay (a[1]);
                     return 300;
