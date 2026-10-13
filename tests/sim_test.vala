@@ -424,6 +424,27 @@ void test_renderer () {
     int o = 60 * surf.get_stride () + 80 * 4;
     int o2 = 2 * surf.get_stride () + 2 * 4;
     check (d[o] != d[o2] || d[o + 1] != d[o2 + 1], "model pixels differ from background");
+    var sphere = new ProductModel ();
+    sphere.make_cube (100);
+    var round = new Gee.ArrayList<Mesh> ();
+    round.add (sphere.subdivided ());
+    var cam2 = new Camera ();
+    cam2.frame (round);
+    var zs = new Cairo.ImageSurface (Cairo.Format.ARGB32, 160, 120);
+    var zo = new RenderOptions ();
+    zo.shading = "zebra";
+    new CpuRenderer ().render (zs, round, cam2, zo);
+    zs.flush ();
+    unowned uint8[] z = zs.get_data ();
+    int bands = 0;
+    bool was_dark = false;
+    for (int y = 20; y < 100; y++) {
+        int q = y * zs.get_stride () + 80 * 4;
+        bool dark = (z[q] + z[q + 1] + z[q + 2]) / 3 < 110;
+        if (y > 20 && dark != was_dark) bands++;
+        was_dark = dark;
+    }
+    check (bands >= 4, "zebra shading draws alternating stripes (%d changes down the middle)".printf (bands));
 }
 
 int main () {

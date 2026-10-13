@@ -309,6 +309,9 @@ namespace Singularity.Apps.Atelier {
                 case "garment":
                     win.show_workspace ("3d");
                     return 800;
+                case "turntable":
+                    if (win.garment_panel != null) win.garment_panel.turntable (rest);
+                    return 3000;
                 case "action":
                     win.activate_action (a[1], a.length > 2 ? new Variant.string (a[2]) : null);
                     return 1200;
