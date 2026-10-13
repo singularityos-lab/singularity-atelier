@@ -3,7 +3,7 @@ using Singularity.Vector;
 namespace Singularity.Apps.Atelier {
 
     public class FlatRenderer {
-        public static Gee.HashMap<string, Cairo.ImageSurface> fabric_cache = new Gee.HashMap<string, Cairo.ImageSurface> ();
+        private static Gee.HashMap<string, Cairo.ImageSurface>? fabric_cache = null;
 
         public static Point[] path_points (PathData p) {
             Point[] pts = {};
@@ -145,6 +145,7 @@ namespace Singularity.Apps.Atelier {
             if (asset == null) return null;
             string img = asset.get_field ("image");
             Cairo.ImageSurface? surf = null;
+            if (fabric_cache == null) fabric_cache = new Gee.HashMap<string, Cairo.ImageSurface> ();
             if (img != "") {
                 if (!fabric_cache.has_key (img)) {
                     try {

@@ -468,6 +468,50 @@ void test_psd () {
     }
 }
 
+void test_fabric_fill () {
+    string dir = tmp_dir ();
+    string swatch = Path.build_filename (dir, "check.png");
+    var tile = new Cairo.ImageSurface (Cairo.Format.RGB24, 16, 16);
+    var tc = new Cairo.Context (tile);
+    tc.set_source_rgb (0.8, 0.1, 0.1);
+    tc.paint ();
+    tc.set_source_rgb (1, 1, 1);
+    tc.rectangle (0, 0, 8, 8);
+    tc.fill ();
+    tile.write_to_png (swatch);
+    var lib = new Singularity.Assets.AssetLibrary (Path.build_filename (dir, "assets.json"));
+    var fabric = new Singularity.Assets.Asset ();
+    fabric.kind = "fabric";
+    fabric.name = "Check";
+    fabric.set_field ("image", swatch);
+    try {
+        lib.add (fabric);
+    } catch (Error e) {
+        check (false, "fabric added: " + e.message);
+        return;
+    }
+    Environment.set_variable ("SINGULARITY_ASSET_LIBRARY", lib.path, true);
+    var p = Project.create ("fashion");
+    FlatSheet sheet = p.flats[0];
+    FlatItem? body = null;
+    foreach (var it in sheet.items) if (it.name == "Body") body = it;
+    body.fabric_id = fabric.id;
+    var surf = new Cairo.ImageSurface (Cairo.Format.RGB24, 600, 600);
+    var cr = new Cairo.Context (surf);
+    cr.set_source_rgb (0, 0, 0);
+    cr.paint ();
+    FlatRenderer.draw_shape (cr, sheet, body, p.colorway (), 1, false);
+    surf.flush ();
+    unowned uchar[] d = surf.get_data ();
+    int red = 0, white = 0;
+    for (int y = 300; y < 340; y++) for (int x = 380; x < 420; x++) {
+        int o = y * surf.get_stride () + x * 4;
+        if (d[o + 2] > 180 && d[o + 1] < 60) red++;
+        if (d[o + 2] > 240 && d[o + 1] > 240 && d[o] > 240) white++;
+    }
+    check (red > 600 && white > 200, "fabric swatch tiles the shape (%d red, %d white pixels)".printf (red, white));
+}
+
 int main () {
     test_psd ();
     test_native ();
@@ -478,5 +522,6 @@ int main () {
     test_tables ();
     test_odt ();
     test_palettes ();
+    test_fabric_fill ();
     return finish ("formats");
 }
