@@ -133,7 +133,9 @@ namespace Singularity.Apps.Atelier {
             if (p == null) return;
             syncing = true;
             var sizes = p.all_sizes ();
-            string active = sizes.contains (p.active_size) ? p.active_size : (sizes.size > 0 ? sizes[0] : "");
+            string active = "";
+            if (sizes.contains (p.active_size)) active = p.active_size;
+            else if (sizes.size > 0) active = sizes[0];
             foreach (var sel in size_selectors) {
                 sel.clear_options ();
                 foreach (var s in sizes) sel.add_option (s, _("Size %s").printf (s));
