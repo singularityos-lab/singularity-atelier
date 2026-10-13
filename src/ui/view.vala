@@ -245,8 +245,33 @@ namespace Singularity.Apps.Atelier {
             return r;
         }
 
+        protected bool gpu_drawn;
+
+        protected virtual Gdk.RGBA? gpu_background () {
+            return null;
+        }
+
+        protected virtual bool snapshot_content (Gtk.Snapshot snapshot) {
+            return false;
+        }
+
+        public override void snapshot (Gtk.Snapshot snapshot) {
+            gpu_drawn = false;
+            var bg = gpu_background ();
+            if (bg != null) {
+                snapshot.append_color (bg, Graphene.Rect ().init (0, 0, get_width (), get_height ()));
+                snapshot.save ();
+                snapshot.translate (Graphene.Point () { x = (float) pan_x, y = (float) pan_y });
+                snapshot.rotate ((float) rotation);
+                snapshot.scale ((float) zoom, (float) zoom);
+                gpu_drawn = snapshot_content (snapshot);
+                snapshot.restore ();
+            }
+            base.snapshot (snapshot);
+        }
+
         private void on_draw (DrawingArea area, Cairo.Context cr, int w, int h) {
-            draw_background (cr, w, h);
+            if (!gpu_drawn) draw_background (cr, w, h);
             cr.save ();
             cr.transform (view_matrix ());
             draw_content (cr);
@@ -296,6 +321,34 @@ namespace Singularity.Apps.Atelier {
 
         protected virtual bool key_pressed (uint keyval, Gdk.ModifierType state) {
             return false;
+        }
+
+        private Gsk.Path? grid_path = null;
+        private double[] grid_key = {};
+
+        protected void snapshot_grid (Gtk.Snapshot snapshot, Rect view, double step, double zoom, bool dark) {
+            while (step * zoom < 12) step *= 5;
+            double x0 = Math.floor (view.x / step) * step, y0 = Math.floor (view.y / step) * step;
+            Gdk.RGBA color = dark ? Gdk.RGBA () { red = 1, green = 1, blue = 1, alpha = 0.06f } : Gdk.RGBA () { red = 0, green = 0, blue = 0, alpha = 0.06f };
+            double[] key = { x0, y0, view.x, view.y, view.x2 (), view.y2 (), step };
+            bool same = grid_path != null && grid_key.length == key.length;
+            for (int i = 0; same && i < key.length; i++) if (grid_key[i] != key[i]) same = false;
+            if (same) {
+                snapshot.append_stroke (grid_path, new Gsk.Stroke ((float) (1 / zoom)), color);
+                return;
+            }
+            var b = new Gsk.PathBuilder ();
+            for (double x = x0; x <= view.x2 (); x += step) {
+                b.move_to ((float) x, (float) view.y);
+                b.line_to ((float) x, (float) view.y2 ());
+            }
+            for (double y = y0; y <= view.y2 (); y += step) {
+                b.move_to ((float) view.x, (float) y);
+                b.line_to ((float) view.x2 (), (float) y);
+            }
+            grid_path = b.to_path ();
+            grid_key = key;
+            snapshot.append_stroke (grid_path, new Gsk.Stroke ((float) (1 / zoom)), color);
         }
 
         public static void draw_grid (Cairo.Context cr, Rect view, double step, double zoom, bool dark) {

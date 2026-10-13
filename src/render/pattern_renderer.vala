@@ -14,6 +14,7 @@ namespace Singularity.Apps.Atelier {
         public bool show_construction = true;
         public bool show_seam = true;
         public bool print_mode;
+        public bool gpu_outlines;
         public string label_font = "Sans";
 
         public double px (double v) {
@@ -40,6 +41,53 @@ namespace Singularity.Apps.Atelier {
                 default: r = v; g = p; b = q; break;
             }
             return Rgba (r, g, b, 1);
+        }
+
+        public static Gsk.Path poly_path (Point[] pts, bool closed) {
+            var b = new Gsk.PathBuilder ();
+            if (pts.length > 0) {
+                b.move_to ((float) pts[0].x, (float) pts[0].y);
+                for (int i = 1; i < pts.length; i++) b.line_to ((float) pts[i].x, (float) pts[i].y);
+                if (closed) b.close ();
+            }
+            return b.to_path ();
+        }
+
+        private static Gdk.RGBA rgba (Rgba c, double alpha = 1) {
+            return { (float) c.r, (float) c.g, (float) c.b, (float) (c.a * alpha) };
+        }
+
+        private static Gsk.Stroke stroke (double width) {
+            var s = new Gsk.Stroke ((float) width);
+            s.set_miter_limit (10);
+            return s;
+        }
+
+        public static Gsk.Path internals_path (PieceGeometry g) {
+            var b = new Gsk.PathBuilder ();
+            foreach (var il in g.internals) {
+                if (il.pts.length == 0) continue;
+                b.move_to ((float) il.pts[0].x, (float) il.pts[0].y);
+                for (int i = 1; i < il.pts.length; i++) b.line_to ((float) il.pts[i].x, (float) il.pts[i].y);
+            }
+            return b.to_path ();
+        }
+
+        public static void snapshot_piece (Gtk.Snapshot s, PieceGeometry g, Gsk.Path outline, Gsk.Path? seam, Gsk.Path? internals, PatternStyle st, bool selected = false, Rgba? outline_color = null) {
+            if (g.cut.length < 3 && g.seam.length < 3) return;
+            var ink = outline_color ?? st.ink;
+            if (!st.print_mode) s.append_fill (outline, Gsk.FillRule.WINDING, rgba (st.piece_fill, selected ? 1 : 0.8));
+            s.append_stroke (outline, stroke (st.px (selected ? 2.2 : 1.5)), rgba (selected ? st.selected : ink));
+            if (seam != null && st.show_seam && g.cut.length > 2 && g.seam.length > 2 && !g.piece.built_in) {
+                var dashed = stroke (st.px (0.9));
+                dashed.set_dash ({ (float) st.px (6), (float) st.px (3) });
+                s.append_stroke (seam, dashed, rgba (ink, 0.8));
+            }
+            if (internals != null && g.internals.size > 0) {
+                var dashed = stroke (st.px (1.1));
+                dashed.set_dash ({ (float) st.px (8), (float) st.px (3), (float) st.px (2), (float) st.px (3) });
+                s.append_stroke (internals, dashed, rgba (ink, 0.8));
+            }
         }
 
         public static void poly (Cairo.Context cr, Point[] pts, bool closed) {
@@ -142,16 +190,18 @@ namespace Singularity.Apps.Atelier {
             if (g.cut.length < 3 && g.seam.length < 3) return;
             cr.save ();
             var ink = outline_color ?? st.ink;
-            cr.new_path ();
-            poly (cr, g.cut.length > 2 ? g.cut : g.seam, true);
-            if (!st.print_mode) {
-                st.piece_fill.apply (cr, selected ? 1 : 0.8);
-                cr.fill_preserve ();
+            if (!st.gpu_outlines) {
+                cr.new_path ();
+                poly (cr, g.cut.length > 2 ? g.cut : g.seam, true);
+                if (!st.print_mode) {
+                    st.piece_fill.apply (cr, selected ? 1 : 0.8);
+                    cr.fill_preserve ();
+                }
+                (selected ? st.selected : ink).apply (cr);
+                cr.set_line_width (st.px (selected ? 2.2 : 1.5));
+                cr.stroke ();
             }
-            (selected ? st.selected : ink).apply (cr);
-            cr.set_line_width (st.px (selected ? 2.2 : 1.5));
-            cr.stroke ();
-            if (st.show_seam && g.cut.length > 2 && g.seam.length > 2 && !g.piece.built_in) {
+            if (!st.gpu_outlines && st.show_seam && g.cut.length > 2 && g.seam.length > 2 && !g.piece.built_in) {
                 cr.new_path ();
                 poly (cr, g.seam, true);
                 cr.set_dash ({ st.px (6), st.px (3) }, 0);
@@ -162,7 +212,7 @@ namespace Singularity.Apps.Atelier {
             }
             cr.set_line_width (st.px (1.1));
             foreach (var n in g.notches) draw_notch (cr, n, st, ink);
-            foreach (var il in g.internals) {
+            if (!st.gpu_outlines) foreach (var il in g.internals) {
                 cr.new_path ();
                 poly (cr, il.pts, false);
                 cr.set_dash ({ st.px (8), st.px (3), st.px (2), st.px (3) }, 0);

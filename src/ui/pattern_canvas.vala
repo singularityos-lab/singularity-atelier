@@ -92,11 +92,66 @@ namespace Singularity.Apps.Atelier {
             cr.paint ();
         }
 
+        protected override Gdk.RGBA? gpu_background () {
+            return Gdk.RGBA () { red = 0.97f, green = 0.965f, blue = 0.955f, alpha = 1 };
+        }
+
+        private class PiecePaths {
+            public void* cut;
+            public void* seam;
+            public double[] matrix;
+            public Gsk.Path outline;
+            public Gsk.Path? seam_path;
+            public Gsk.Path internals;
+        }
+
+        private void* paths_result = null;
+        private HashTable<PieceGeometry, PiecePaths> piece_paths = new HashTable<PieceGeometry, PiecePaths> (direct_hash, direct_equal);
+
+        private PiecePaths paths_for (PieceGeometry g) {
+            var m = mode == "pieces" ? g.placement_matrix () : Cairo.Matrix.identity ();
+            double[] values = { m.xx, m.yx, m.xy, m.yy, m.x0, m.y0 };
+            var entry = piece_paths[g];
+            if (entry != null && entry.cut == (void*) g.cut && entry.seam == (void*) g.seam) {
+                bool same = true;
+                for (int i = 0; i < 6; i++) if (entry.matrix[i] != values[i]) same = false;
+                if (same) return entry;
+            }
+            var shape = mode == "pieces" ? g.transformed (m) : g;
+            entry = new PiecePaths ();
+            entry.cut = (void*) g.cut;
+            entry.seam = (void*) g.seam;
+            entry.matrix = values;
+            entry.outline = PatternRenderer.poly_path (shape.cut.length > 2 ? shape.cut : shape.seam, true);
+            entry.seam_path = shape.seam.length > 2 ? PatternRenderer.poly_path (shape.seam, true) : null;
+            entry.internals = PatternRenderer.internals_path (shape);
+            piece_paths[g] = entry;
+            return entry;
+        }
+
+        protected override bool snapshot_content (Gtk.Snapshot snapshot) {
+            if (result == null || (mode != "draft" && mode != "pieces")) return false;
+            if (paths_result != (void*) result) {
+                piece_paths.remove_all ();
+                paths_result = (void*) result;
+            }
+            snapshot_grid (snapshot, visible_doc (), 10, zoom, false);
+            foreach (var g in result.pieces) {
+                var ps = new PatternStyle ();
+                ps.zoom = zoom;
+                if (mode == "draft") ps.piece_fill = Rgba (0.98, 0.95, 0.88, 0.35);
+                var p = paths_for (g);
+                PatternRenderer.snapshot_piece (snapshot, g, p.outline, p.seam_path, p.internals, ps, g.piece.id == selected_piece);
+            }
+            return true;
+        }
+
         protected override void draw_content (Cairo.Context cr) {
             if (result == null) return;
             var st = new PatternStyle ();
             st.zoom = zoom;
-            draw_grid (cr, visible_doc (), 10, zoom, false);
+            st.gpu_outlines = gpu_drawn;
+            if (!gpu_drawn) draw_grid (cr, visible_doc (), 10, zoom, false);
             var sel = new Gee.HashSet<string> ();
             sel.add_all (selection);
             switch (mode) {
@@ -106,6 +161,7 @@ namespace Singularity.Apps.Atelier {
                         ps.zoom = zoom;
                         ps.piece_fill = Rgba (0.98, 0.95, 0.88, 0.35);
                         ps.show_labels = false;
+                        ps.gpu_outlines = gpu_drawn;
                         PatternRenderer.draw_piece (cr, g, ps, result.size, g.piece.id == selected_piece);
                     }
                     PatternRenderer.draw_draft (cr, pattern, result, st, sel);
