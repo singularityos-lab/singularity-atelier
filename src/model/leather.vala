@@ -56,7 +56,8 @@ namespace Singularity.Apps.Atelier {
         }
 
         public static Point[] skive_line (PieceGeometry g, double width) {
-            return Offset.polyline (close (g.cut), -width * (Polyline.signed_area (g.cut) >= 0 ? 1 : -1));
+            if (g.cut.length < 3) return g.cut;
+            return close (Offset.closed (split_edges (g.cut, -width)));
         }
 
         private static Point[] close (Point[] ring) {

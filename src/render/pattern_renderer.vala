@@ -220,6 +220,17 @@ namespace Singularity.Apps.Atelier {
                 cr.stroke ();
                 cr.set_dash (null, 0);
             }
+            double skive = g.piece.leather_skive != "" ? double.parse (g.piece.leather_skive) : 0;
+            if (skive > 0 && g.cut.length > 2) {
+                cr.new_path ();
+                poly (cr, Leather.skive_line (g, skive), false);
+                cr.set_dash ({ st.px (2), st.px (2) }, 0);
+                cr.set_line_width (st.px (0.9));
+                ink.apply (cr, 0.7);
+                cr.stroke ();
+                cr.set_dash (null, 0);
+                cr.set_line_width (st.px (1.1));
+            }
             for (int i = 0; i < g.drills.size; i++) {
                 var d = g.drills[i];
                 double rr = (i < g.drill_sizes.size ? g.drill_sizes[i] : 3) / 2;
