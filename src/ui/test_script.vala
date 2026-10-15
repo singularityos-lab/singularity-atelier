@@ -385,7 +385,7 @@ namespace Singularity.Apps.Atelier {
                 }
                 case "close-dialogs":
                     var others = new Gee.ArrayList<Gtk.Window> ();
-                    foreach (var w in win.application.get_windows ()) if (w != win) others.add (w);
+                    foreach (var w in win.application.get_windows ().copy ()) if (w != win) others.add (w);
                     foreach (var w in others) {
                         var cancel = find_button (w, _("Cancel"));
                         if (cancel != null) cancel.clicked ();
