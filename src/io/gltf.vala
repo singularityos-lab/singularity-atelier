@@ -214,6 +214,7 @@ namespace Singularity.Apps.Atelier {
         }
 
         private static uint32 u32 (uint8[] d, int p) {
+            if (p < 0 || (int64) p + 4 > d.length) return 0;
             return d[p] | ((uint32) d[p + 1] << 8) | ((uint32) d[p + 2] << 16) | ((uint32) d[p + 3] << 24);
         }
 
@@ -225,13 +226,18 @@ namespace Singularity.Apps.Atelier {
                 if (total > data.length) throw new MeshIOError.INVALID (_("The GLB file is truncated"));
                 int pos = 12;
                 json_text = "";
-                while (pos + 8 <= total) {
+                while ((int64) pos + 8 <= total) {
                     uint32 len = u32 (data, pos);
                     uint32 type = u32 (data, pos + 4);
                     int start = pos + 8;
-                    if (start + len > total) throw new MeshIOError.INVALID (_("Bad GLB chunk"));
-                    if (type == CHUNK_JSON) json_text = ((string) data[start:start + len]).substring (0, (long) len);
-                    else if (type == CHUNK_BIN) glb_bin = data[start:start + len];
+                    if ((int64) start + len > total) throw new MeshIOError.INVALID (_("Bad GLB chunk"));
+                    if (type == CHUNK_JSON) {
+                        var sb = new StringBuilder.sized (len + 1);
+                        sb.append_len ((string) ((uint8*) data + start), (ssize_t) len);
+                        json_text = sb.str;
+                    } else if (type == CHUNK_BIN) {
+                        glb_bin = data[start:start + len];
+                    }
                     pos = start + (int) len;
                 }
             } else {
@@ -359,24 +365,39 @@ namespace Singularity.Apps.Atelier {
             return v.add (t.scale (w)).add (q.cross (t));
         }
 
-        private static uint8[] view_data (Json.Array views, Gee.List<Bytes> buffers, int view, out int stride) {
+        private static uint8[] view_data (Json.Array views, Gee.List<Bytes> buffers, int view, out int stride) throws Error {
+            stride = 0;
+            if (view < 0 || view >= views.get_length ()) throw new MeshIOError.INVALID (_("Bad glTF buffer view"));
             var vo = views.get_object_element (view);
-            int buffer = (int) vo.get_int_member ("buffer");
-            int off = vo.has_member ("byteOffset") ? (int) vo.get_int_member ("byteOffset") : 0;
-            int len = (int) vo.get_int_member ("byteLength");
-            stride = vo.has_member ("byteStride") ? (int) vo.get_int_member ("byteStride") : 0;
-            unowned uint8[] all = buffers[buffer].get_data ();
+            int64 buffer = vo.get_int_member ("buffer");
+            int64 off = vo.has_member ("byteOffset") ? vo.get_int_member ("byteOffset") : 0;
+            int64 len = vo.get_int_member ("byteLength");
+            int64 st = vo.has_member ("byteStride") ? vo.get_int_member ("byteStride") : 0;
+            if (buffer < 0 || buffer >= buffers.size) throw new MeshIOError.INVALID (_("Bad glTF buffer view"));
+            unowned uint8[] all = buffers[(int) buffer].get_data ();
+            if (off < 0 || len < 0 || off + len > all.length || st < 0 || st > 252) throw new MeshIOError.INVALID (_("Bad glTF buffer view"));
+            stride = (int) st;
             return all[off:off + len];
         }
 
-        private static double[] read_floats (Json.Array accs, Json.Array views, Gee.List<Bytes> buffers, int acc, int comps) throws Error {
+        private static Json.Object accessor (Json.Array accs, int acc, out int count) throws Error {
+            if (acc < 0 || acc >= accs.get_length ()) throw new MeshIOError.INVALID (_("Bad glTF accessor"));
             var ao = accs.get_object_element (acc);
-            int count = (int) ao.get_int_member ("count");
+            int64 c = ao.get_int_member ("count");
+            if (c < 0 || c > (1 << 26)) throw new MeshIOError.INVALID (_("Bad glTF accessor"));
+            count = (int) c;
+            return ao;
+        }
+
+        private static double[] read_floats (Json.Array accs, Json.Array views, Gee.List<Bytes> buffers, int acc, int comps) throws Error {
+            int count;
+            var ao = accessor (accs, acc, out count);
             if (ao.get_int_member ("componentType") != 5126) throw new MeshIOError.UNSUPPORTED (_("Only float vertex data is supported"));
             int stride;
             var d = view_data (views, buffers, (int) ao.get_int_member ("bufferView"), out stride);
             int off = ao.has_member ("byteOffset") ? (int) ao.get_int_member ("byteOffset") : 0;
             if (stride == 0) stride = comps * 4;
+            if (off < 0 || (count > 0 && (int64) off + (int64) (count - 1) * stride + comps * 4 > d.length)) throw new MeshIOError.INVALID (_("Bad glTF accessor"));
             var r = new double[count * comps];
             for (int i = 0; i < count; i++) {
                 for (int c = 0; c < comps; c++) {
@@ -391,14 +412,15 @@ namespace Singularity.Apps.Atelier {
         }
 
         private static int[] read_ints (Json.Array accs, Json.Array views, Gee.List<Bytes> buffers, int acc) throws Error {
-            var ao = accs.get_object_element (acc);
-            int count = (int) ao.get_int_member ("count");
+            int count;
+            var ao = accessor (accs, acc, out count);
             int type = (int) ao.get_int_member ("componentType");
             int stride;
             var d = view_data (views, buffers, (int) ao.get_int_member ("bufferView"), out stride);
             int off = ao.has_member ("byteOffset") ? (int) ao.get_int_member ("byteOffset") : 0;
             int size = type == 5125 ? 4 : (type == 5123 ? 2 : 1);
             if (stride == 0) stride = size;
+            if (off < 0 || (count > 0 && (int64) off + (int64) (count - 1) * stride + size > d.length)) throw new MeshIOError.INVALID (_("Bad glTF accessor"));
             var r = new int[count];
             for (int i = 0; i < count; i++) {
                 int p = off + i * stride;

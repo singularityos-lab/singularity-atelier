@@ -262,12 +262,42 @@ void test_fbx () throws Error {
     DirUtils.remove (dir);
 }
 
+void test_damaged () throws Error {
+    var meshes = sample ();
+    var glb = Gltf.write (meshes, true);
+    var fbx = Fbx.write_binary (meshes);
+    var rand = new Rand.with_seed (17);
+    for (int round = 0; round < 300; round++) {
+        uint8[] g = glb.copy ();
+        uint8[] f = fbx.copy ();
+        int flips = 1 + rand.int_range (0, 6);
+        for (int i = 0; i < flips; i++) {
+            g[rand.int_range (0, g.length)] = (uint8) rand.int_range (0, 256);
+            f[rand.int_range (0, int.min (f.length, 2000))] = (uint8) rand.int_range (0, 256);
+        }
+        if (round % 4 == 0) {
+            g.length = rand.int_range (12, g.length);
+            f.length = rand.int_range (27, f.length);
+        }
+        try {
+            Gltf.parse (g);
+        } catch (Error e) {
+        }
+        try {
+            Fbx.to_meshes (Fbx.parse_binary (f));
+        } catch (Error e) {
+        }
+    }
+    check (true, "damaged glb and fbx do not crash");
+}
+
 int main () {
     try {
         test_glb ();
         test_obj ();
         test_step ();
         test_fbx ();
+        test_damaged ();
     } catch (Error e) {
         check (false, e.message);
     }

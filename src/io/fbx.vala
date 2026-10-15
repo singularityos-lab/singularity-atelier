@@ -523,7 +523,8 @@ namespace Singularity.Apps.Atelier {
             return FbxProp.i ((int) v);
         }
 
-        private static FbxNode parse_ascii_node (Lexer lx, string name) throws Error {
+        private static FbxNode parse_ascii_node (Lexer lx, string name, int depth = 0) throws Error {
+            if (depth > 64) throw new MeshIOError.INVALID ("FBX: nodes are nested too deeply");
             var n = new FbxNode (name);
             lx.skip_inline ();
             if (lx.pos < lx.src.length && lx.src[lx.pos] == '*') {
@@ -577,7 +578,7 @@ namespace Singularity.Apps.Atelier {
                     string cname = lx.word ();
                     if (lx.peek () != ':') throw new MeshIOError.INVALID ("FBX: ':' expected after %s", cname);
                     lx.pos++;
-                    n.children.add (parse_ascii_node (lx, cname));
+                    n.children.add (parse_ascii_node (lx, cname, depth + 1));
                 }
                 lx.pos++;
             }
@@ -596,7 +597,12 @@ namespace Singularity.Apps.Atelier {
             return list;
         }
 
+        private static void need (uint8[] d, int64 p, int64 n) throws Error {
+            if (p < 0 || n < 0 || p + n > d.length) throw new MeshIOError.INVALID ("FBX: truncated");
+        }
+
         private static uint32 get32 (uint8[] d, int p) {
+            if (p < 0 || (int64) p + 4 > d.length) return 0;
             return d[p] | ((uint32) d[p + 1] << 8) | ((uint32) d[p + 2] << 16) | ((uint32) d[p + 3] << 24);
         }
 
@@ -612,14 +618,16 @@ namespace Singularity.Apps.Atelier {
         }
 
         private static string bytes_str (uint8[] d, int start, int len) {
+            if (len < 0 || start < 0 || (int64) start + len > d.length) len = 0;
             var copy = new uint8[len + 1];
             if (len > 0) Memory.copy (copy, &d[start], len);
             copy[len] = 0;
             return (string) copy;
         }
 
-        private static FbxNode? read_bin_node (uint8[] d, ref int p) throws Error {
-            if (p + 13 > d.length) throw new MeshIOError.INVALID ("FBX: truncated");
+        private static FbxNode? read_bin_node (uint8[] d, ref int p, int depth = 0) throws Error {
+            need (d, p, 13);
+            if (depth > 64) throw new MeshIOError.INVALID ("FBX: nodes are nested too deeply");
             uint32 end = get32 (d, p);
             uint32 nprops = get32 (d, p + 4);
             uint8 nlen = d[p + 12];
@@ -627,30 +635,39 @@ namespace Singularity.Apps.Atelier {
                 p += 13;
                 return null;
             }
+            if (end <= (uint32) p || end > d.length) throw new MeshIOError.INVALID ("FBX: damaged node");
+            need (d, p + 13, nlen);
             var n = new FbxNode (bytes_str (d, p + 13, nlen));
             p += 13 + nlen;
             for (uint i = 0; i < nprops; i++) {
+                need (d, p, 1);
                 char k = (char) d[p++];
                 switch (k) {
                     case 'I':
+                        need (d, p, 4);
                         n.add (FbxProp.i ((int32) get32 (d, p)));
                         p += 4;
                         break;
                     case 'L':
+                        need (d, p, 8);
                         n.add (FbxProp.l ((int64) get64 (d, p)));
                         p += 8;
                         break;
                     case 'D':
+                        need (d, p, 8);
                         n.add (FbxProp.d (getd (d, p)));
                         p += 8;
                         break;
                     case 'C':
+                        need (d, p, 1);
                         n.add (FbxProp.c (d[p] != 0));
                         p += 1;
                         break;
                     case 'S':
+                        need (d, p, 4);
                         uint32 len = get32 (d, p);
                         p += 4;
+                        need (d, p, len);
                         string raw;
                         int zero = -1;
                         for (int q = 0; q + 1 < (int) len; q++) if (d[p + q] == 0 && d[p + q + 1] == 1) zero = q;
@@ -661,11 +678,14 @@ namespace Singularity.Apps.Atelier {
                         break;
                     case 'd':
                     case 'i':
+                        need (d, p, 12);
                         uint32 count = get32 (d, p);
                         uint32 enc = get32 (d, p + 4);
                         uint32 clen = get32 (d, p + 8);
                         p += 12;
                         if (enc != 0) throw new MeshIOError.UNSUPPORTED ("FBX: compressed arrays are not supported");
+                        need (d, p, clen);
+                        need (d, p, (int64) count * (k == 'd' ? 8 : 4));
                         if (k == 'd') {
                             var a = new double[count];
                             for (uint q = 0; q < count; q++) a[q] = getd (d, p + (int) q * 8);
@@ -682,10 +702,11 @@ namespace Singularity.Apps.Atelier {
                 }
             }
             while (p < (int) end) {
-                var c = read_bin_node (d, ref p);
+                var c = read_bin_node (d, ref p, depth + 1);
                 if (c == null) break;
                 n.children.add (c);
             }
+            if (p > (int) end) throw new MeshIOError.INVALID ("FBX: damaged node");
             p = (int) end;
             return n;
         }
@@ -725,6 +746,7 @@ namespace Singularity.Apps.Atelier {
             }
             var list = new Gee.ArrayList<Mesh> ();
             foreach (var model in models) {
+                if (model.props.size < 2) continue;
                 int64 mid = model.props[0].ival;
                 FbxNode? geom = null, mat = null;
                 if (conns != null) {
@@ -737,29 +759,35 @@ namespace Singularity.Apps.Atelier {
                 }
                 if (geom == null) continue;
                 var m = new Mesh ();
-                string label = model.props[1].sval;
+                string label = model.props[1].sval ?? "";
                 int sep = label.index_of ("::");
                 m.name = sep >= 0 ? label.substring (sep + 2) : label;
                 var vn = geom.find ("Vertices");
                 var pn = geom.find ("PolygonVertexIndex");
-                if (vn == null || pn == null) continue;
+                if (vn == null || pn == null || vn.props.size == 0 || pn.props.size == 0) continue;
+                if ((vn.props[0].kind != 'd' && vn.props[0].kind != 'f') || (pn.props[0].kind != 'd' && pn.props[0].kind != 'i')) continue;
                 var va = vn.props[0];
                 for (int i = 0; i + 2 < va.length (); i += 3) m.vertices.add (Vec3 (va.darr[i], va.darr[i + 1], va.darr[i + 2]));
                 var pa = pn.props[0];
                 int[] poly = {};
                 for (int i = 0; i < pa.length (); i++) {
-                    int v = pa.kind == 'd' ? (int) pa.darr[i] : pa.iarr[i];
+                    int64 v = pa.kind == 'd' ? (int64) pa.darr[i] : pa.iarr[i];
                     bool last = v < 0;
-                    poly += last ? -v - 1 : v;
+                    int64 index = last ? -v - 1 : v;
+                    bool valid = index < m.vertices.size;
+                    poly += valid ? (int) index : -1;
                     if (last) {
-                        for (int k = 1; k + 1 < poly.length; k++) m.add_triangle (poly[0], poly[k], poly[k + 1]);
+                        bool ok = true;
+                        foreach (int q in poly) if (q < 0) ok = false;
+                        if (ok) for (int k = 1; k + 1 < poly.length; k++) m.add_triangle (poly[0], poly[k], poly[k + 1]);
                         poly = {};
                     }
                 }
                 var uvl = geom.find ("LayerElementUV");
                 if (uvl != null && uvl.find ("UV") != null) {
-                    var ua = uvl.find ("UV").props[0];
-                    if (ua.length () == m.vertices.size * 2) for (int i = 0; i < ua.length (); i++) m.uvs.add (ua.darr[i]);
+                    var un = uvl.find ("UV");
+                    var ua = un.props.size > 0 ? un.props[0] : FbxProp.da ({});
+                    if ((ua.kind == 'd' || ua.kind == 'f') && ua.length () == m.vertices.size * 2) for (int i = 0; i < ua.length (); i++) m.uvs.add (ua.darr[i]);
                 }
                 if (mat != null) {
                     var p70 = mat.find ("Properties70");
@@ -773,7 +801,7 @@ namespace Singularity.Apps.Atelier {
                             else if (key == "Metallic") m.metallic = p.props[4].as_double ();
                         }
                     }
-                    string ml = mat.props[1].sval;
+                    string ml = mat.props.size >= 2 ? (mat.props[1].sval ?? "") : "";
                     int ms = ml.index_of ("::");
                     string mname = ms >= 0 ? ml.substring (ms + 2) : ml;
                     int us = mname.last_index_of ("_");
