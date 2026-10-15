@@ -468,6 +468,22 @@ void test_psd () {
     }
 }
 
+void test_psd_damaged () {
+    var good = psd_fixture (5, 4, 200, 100, 50);
+    var rand = new Rand.with_seed (9);
+    for (int round = 0; round < 400; round++) {
+        uint8[] d = good.copy ();
+        int flips = 1 + rand.int_range (0, 6);
+        for (int i = 0; i < flips; i++) d[rand.int_range (4, d.length)] = (uint8) rand.int_range (0, 256);
+        if (round % 4 == 0) d.length = rand.int_range (26, d.length);
+        try {
+            Psd.read (d, new Sketch ());
+        } catch (Error e) {
+        }
+    }
+    check (true, "psd damaged files do not crash");
+}
+
 void test_fabric_fill () {
     string dir = tmp_dir ();
     string swatch = Path.build_filename (dir, "check.png");
@@ -514,6 +530,7 @@ void test_fabric_fill () {
 
 int main () {
     test_psd ();
+    test_psd_damaged ();
     test_native ();
     test_product_native ();
     test_product_invalid ();

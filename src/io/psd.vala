@@ -9,8 +9,20 @@ namespace Singularity.Apps.Atelier {
             pos = 0;
         }
 
-        private void need (int n) throws FormatError {
-            if (pos + n > d.length) throw new FormatError.INVALID (_("The Photoshop file is truncated"));
+        private const int MAX_SIDE = 30000;
+        private const int64 MAX_PIXELS = 1 << 26;
+
+        private void need (int64 n) throws FormatError {
+            if (n < 0 || pos < 0 || (int64) pos + n > d.length) throw new FormatError.INVALID (_("The Photoshop file is truncated"));
+        }
+
+        private void seek (int64 target) throws FormatError {
+            if (target < 0 || target > d.length) throw new FormatError.INVALID (_("The Photoshop file is truncated"));
+            pos = (int) target;
+        }
+
+        private void skip (int64 n) throws FormatError {
+            seek ((int64) pos + n);
         }
 
         private uint32 u32 () throws FormatError {
@@ -64,7 +76,7 @@ namespace Singularity.Apps.Atelier {
                 var counts = new int[h];
                 for (int r = 0; r < h; r++) counts[r] = u16 ();
                 for (int r = 0; r < h; r++) {
-                    int end = pos + counts[r];
+                    int end = (int) int64.min ((int64) pos + counts[r], d.length);
                     int x = 0;
                     while (pos < end && x < w) {
                         int8 n = (int8) u8 ();
@@ -90,17 +102,17 @@ namespace Singularity.Apps.Atelier {
             p.pos = 4;
             uint16 version = p.u16 ();
             if (version != 1) throw new FormatError.UNSUPPORTED (_("Large Photoshop documents are not supported"));
-            p.pos += 6;
+            p.skip (6);
             p.u16 ();
             p.u32 ();
             p.u32 ();
             uint16 depth = p.u16 ();
             uint16 mode = p.u16 ();
             if (depth != 8 || (mode != 3 && mode != 1)) throw new FormatError.UNSUPPORTED (_("Only 8 bit RGB and greyscale Photoshop documents are supported"));
-            p.pos += (int) p.u32 ();
-            p.pos += (int) p.u32 ();
+            p.skip (p.u32 ());
+            p.skip (p.u32 ());
             uint32 lm_len = p.u32 ();
-            int lm_end = p.pos + (int) lm_len;
+            int64 lm_end = (int64) p.pos + lm_len;
             if (lm_len == 0) return result;
             uint32 li_len = p.u32 ();
             if (li_len == 0) return result;
@@ -120,29 +132,33 @@ namespace Singularity.Apps.Atelier {
                     ch.length = p.u32 ();
                     l.channels.add (ch);
                 }
-                p.pos += 4;
+                p.skip (4);
                 p.need (4);
-                l.blend = ((string) data[p.pos:p.pos + 4]).substring (0, 4);
-                p.pos += 4;
+                var blend = new StringBuilder ();
+                for (int k = 0; k < 4; k++) blend.append_c ((char) data[p.pos + k]);
+                l.blend = blend.str;
+                p.skip (4);
                 l.opacity = p.u8 ();
                 p.u8 ();
                 uint8 flags = p.u8 ();
                 l.hidden = (flags & 2) != 0;
                 p.u8 ();
                 uint32 extra = p.u32 ();
-                int extra_end = p.pos + (int) extra;
-                p.pos += (int) p.u32 ();
-                p.pos += (int) p.u32 ();
+                int64 extra_end = (int64) p.pos + extra;
+                p.skip (p.u32 ());
+                p.skip (p.u32 ());
                 int nlen = p.u8 ();
                 p.need (nlen);
                 var sb = new StringBuilder ();
                 for (int k = 0; k < nlen; k++) sb.append_c ((char) data[p.pos + k]);
                 l.name = sb.str.validate () ? sb.str : _("Layer %d").printf (i + 1);
-                p.pos = extra_end;
+                p.seek (extra_end);
                 layers.add (l);
             }
             foreach (var l in layers) {
-                int w = l.right - l.left, h = l.bottom - l.top;
+                int64 lw = (int64) l.right - l.left, lh = (int64) l.bottom - l.top;
+                bool fits = lw > 0 && lh > 0 && lw <= MAX_SIDE && lh <= MAX_SIDE && lw * lh <= MAX_PIXELS;
+                int w = fits ? (int) lw : 0, h = fits ? (int) lh : 0;
                 var planes = new Gee.HashMap<int, Bytes> ();
                 foreach (var ch in l.channels) {
                     int start = p.pos;
@@ -152,10 +168,11 @@ namespace Singularity.Apps.Atelier {
                         } catch (FormatError e) {
                         }
                     }
-                    p.pos = start + (int) ch.length;
+                    p.seek ((int64) start + ch.length);
                 }
                 if (w <= 0 || h <= 0) continue;
                 var surf = new Cairo.ImageSurface (Cairo.Format.ARGB32, w, h);
+                if (surf.status () != Cairo.Status.SUCCESS) continue;
                 surf.flush ();
                 unowned uint8[] px = surf.get_data ();
                 int stride = surf.get_stride ();
@@ -188,7 +205,7 @@ namespace Singularity.Apps.Atelier {
                 sl.image_matrix = m;
                 result.insert (0, sl);
             }
-            if (lm_end > p.pos) p.pos = lm_end;
+            if (lm_end > p.pos && lm_end <= data.length) p.pos = (int) lm_end;
             return result;
         }
     }
