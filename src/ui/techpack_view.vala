@@ -293,7 +293,7 @@ namespace Singularity.Apps.Atelier {
             int row = 1;
             foreach (var b in tp.bom) {
                 var it = b;
-                var cd = new DropDown.from_strings (catl);
+                var cd = new ChoiceButton.from_strings (catl);
                 cd.valign = Align.CENTER;
                 int cs = 0;
                 for (int i = 0; i < cats.length; i++) if (cats[i] == b.category) cs = i;
