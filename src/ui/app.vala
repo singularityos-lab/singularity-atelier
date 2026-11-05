@@ -78,6 +78,7 @@ namespace Singularity.Apps.Atelier {
             });
             add_action (settings_action);
             build_menu ();
+            AtelierIntents.install (this);
             string[,] accels = {
                 { "app.quit", "<Control>q" }, { "app.open", "<Control>o" }, { "app.settings", "<Control>comma" },
                 { "win.save", "<Control>s" }, { "win.save-as", "<Control><Shift>s" }, { "win.close-project", "<Control>w" },

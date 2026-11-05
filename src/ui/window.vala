@@ -32,6 +32,8 @@ namespace Singularity.Apps.Atelier {
         public ProductPanel? product_panel;
         private Stack? panel3d_stack;
         private bool close_confirmed;
+        private string? export_path;
+        private Error? export_error;
         private bool pattern_dirty;
 
         public AtelierWindow (AtelierApp app) {
@@ -681,6 +683,14 @@ namespace Singularity.Apps.Atelier {
         }
 
         private void save_as (string title, string ext, string filter, owned SaveFunc writer) {
+            if (export_path != null) {
+                try {
+                    writer (Dialogs.ensure_suffix (export_path, ext));
+                } catch (Error e) {
+                    export_error = e;
+                }
+                return;
+            }
             Dialogs.save.begin (this, title, base_name () + "." + ext, filter, { ext }, (o, r) => {
                 var f = Dialogs.save.end (r);
                 if (f == null) return;
@@ -695,6 +705,14 @@ namespace Singularity.Apps.Atelier {
         }
 
         public delegate void SaveFunc (string path) throws Error;
+
+        public void export_to (string what, string path) throws Error {
+            export_path = path;
+            export_error = null;
+            export (what);
+            export_path = null;
+            if (export_error != null) throw export_error;
+        }
 
         public void export (string what) {
             if (project == null) return;
