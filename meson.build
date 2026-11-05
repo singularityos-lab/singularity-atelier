@@ -197,3 +197,13 @@ install_data('data/dev.sinty.atelier.metainfo.xml',
 install_data('data/icons/dev.sinty.atelier.svg',
   install_dir: get_option('datadir') / 'icons' / 'hicolor' / 'scalable' / 'apps'
 )
+
+atelier_service_conf = configuration_data()
+atelier_service_conf.set('bindir', get_option('prefix') / get_option('bindir'))
+configure_file(
+  input: 'data/dev.sinty.atelier.service.in',
+  output: 'dev.sinty.atelier.service',
+  configuration: atelier_service_conf,
+  install: true,
+  install_dir: get_option('datadir') / 'dbus-1' / 'services'
+)

@@ -1,0 +1,3 @@
+[D-BUS Service]
+Name=dev.sinty.atelier
+Exec=@bindir@/singularity-atelier --gapplication-service
