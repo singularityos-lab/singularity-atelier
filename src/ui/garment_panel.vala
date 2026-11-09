@@ -176,27 +176,22 @@ namespace Singularity.Apps.Atelier {
                     if (f % 6 == 5 || f == total - 1) {
                         var mesh = local.garment_mesh (map);
                         int frame = local.frame;
-                        Idle.add (() => {
+                        Async.post(this, () => {
                             garment = mesh;
                             status_row.subtitle = _("Frame %d").printf (frame);
                             show_scene ();
-                            return Source.REMOVE;
                         });
                     }
                 }
-                Idle.add (() => {
+                Async.post(this, () => {
                     finished ();
-                    return Source.REMOVE;
                 });
                 return null;
             });
         }
 
         private void finished () {
-            if (worker != null) {
-                worker.join ();
-                worker = null;
-            }
+            worker = null;
             AtomicInt.set (ref running, 0);
             simulate_button.sensitive = true;
             stop_button.visible = false;
