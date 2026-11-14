@@ -36,19 +36,39 @@ def read_target(path, count):
     return d
 
 
-PROXIES = ("hair/afro01", "hair/bob01", "hair/bob02", "hair/braid01", "hair/long01", "hair/ponytail01", "hair/short01", "hair/short02", "hair/short03", "hair/short04")
+PROXIES = ("hair/afro01", "hair/bob01", "hair/bob02", "hair/braid01", "hair/long01", "hair/ponytail01", "hair/short01", "hair/short02", "hair/short03", "hair/short04", "clothes/shoes01", "clothes/fedora01")
 BROWS = "eyebrows/eyebrow001"
 
 
 def read_proxy(assets, rel):
     folder = os.path.join(assets, rel)
     name = os.path.basename(rel)
-    verts, scales, in_verts = [], {}, False
+    verts, scales, in_verts, hidden, in_hidden = [], {}, False, [], False
+    obj_name = name + ".obj"
     with open(os.path.join(folder, name + ".mhclo"), errors="replace") as f:
         for line in f:
             p = line.split()
             if not p or p[0].startswith("#"):
                 continue
+            if p[0] == "obj_file":
+                obj_name = p[1]
+                continue
+            if p[0] == "delete_verts":
+                in_hidden, in_verts = True, False
+                continue
+            if in_hidden:
+                if not (p[0].isdigit() or p[0] == "-"):
+                    in_hidden = False
+                else:
+                    k = 0
+                    while k < len(p):
+                        if k + 2 < len(p) and p[k + 1] == "-":
+                            hidden.extend(range(int(p[k]), int(p[k + 2]) + 1))
+                            k += 3
+                        else:
+                            hidden.append(int(p[k]))
+                            k += 1
+                    continue
             if p[0] in ("x_scale", "y_scale", "z_scale"):
                 scales[p[0][0]] = (int(p[1]), int(p[2]), float(p[3]))
             elif p[0] == "verts":
@@ -58,13 +78,13 @@ def read_proxy(assets, rel):
             elif in_verts and len(p) == 1 and p[0].isdigit():
                 verts.append(([int(p[0])] * 3, [1.0, 0.0, 0.0], [0.0, 0.0, 0.0]))
     tris = []
-    with open(os.path.join(folder, name + ".obj"), errors="replace") as f:
+    with open(os.path.join(folder, obj_name), errors="replace") as f:
         for line in f:
             if line.startswith("f "):
                 ids = [int(t.split("/")[0]) - 1 for t in line.split()[1:]]
                 for k in range(1, len(ids) - 1):
                     tris.append((ids[0], ids[k], ids[k + 1]))
-    return name, verts, scales, tris
+    return name, verts, scales, tris, hidden
 
 
 def proxy_points(base, verts, scales):
@@ -95,7 +115,7 @@ def main():
     proxies = [read_proxy(assets, rel) for rel in PROXIES] if assets else []
     brows = read_proxy(assets, BROWS) if assets else None
     extra = set()
-    for _, pv, sc, _ in proxies:
+    for _, pv, sc, _, _ in proxies:
         for ids, _, _ in pv:
             extra.update(ids)
         for a, b, _ in sc.values():
@@ -169,7 +189,7 @@ def main():
 
     out = bytearray()
     out += b"ATAV"
-    out += struct.pack("<7I", 2, nv, len(used), len(quads), len(order), len(joint_names), len(dense))
+    out += struct.pack("<7I", 5, nv, len(used), len(quads), len(order), len(joint_names), len(dense))
     out += struct.pack("<I", len(sparse))
     out += np.array([[remap[i] for i in q] for q in quads], dtype="<u2").tobytes()
     for b in order:
@@ -197,7 +217,7 @@ def main():
         out += idx.astype("<u2").tobytes()
         out += np.round(mm / scale).astype("<i2").tobytes()
     out += struct.pack("<I", len(proxies))
-    for name, pv, sc, tris in proxies:
+    for name, pv, sc, tris, hidden in proxies:
         out += name_bytes(name)
         out += struct.pack("<II", len(pv), len(tris))
         for a in "xyz":
@@ -206,6 +226,8 @@ def main():
         for ids, w, off in pv:
             out += struct.pack("<3H6f", remap[ids[0]], remap[ids[1]], remap[ids[2]], *w, *off)
         out += np.array(tris, dtype="<u2").tobytes()
+        gone = [remap[i] for i in hidden if i in remap and remap[i] < len(used)]
+        out += struct.pack("<I", len(gone)) + np.array(gone, dtype="<u2").tobytes()
     mask = []
     if brows:
         pts = proxy_points(verts, brows[1], brows[2])
@@ -216,9 +238,17 @@ def main():
         mask = np.nonzero(near)[0]
     out += struct.pack("<I", len(mask))
     out += np.array(mask, dtype="<u2").tobytes()
+    amount = np.zeros(len(used))
+    for name in ("mouth-upperlip-volume-incr", "mouth-lowerlip-volume-incr"):
+        d = np.linalg.norm(target("mouth", name + ".target")[: len(used)], axis=1)
+        amount = np.maximum(amount, d / d.max())
+    lips = np.nonzero(amount > 0.02)[0]
+    out += struct.pack("<I", len(lips))
+    for i in lips:
+        out += struct.pack("<HB", int(i), int(round(amount[i] * 255)))
     with open(out_path, "wb") as f:
         f.write(out)
-    print("vertices %d (render %d) quads %d bones %d joints %d dense %d sparse %d proxies %d brow %d bytes %d" % (nv, len(used), len(quads), len(order), len(joint_names), len(dense), len(sparse), len(proxies), len(mask), len(out)))
+    print("vertices %d (render %d) quads %d bones %d joints %d dense %d sparse %d proxies %d brow %d lips %d bytes %d" % (nv, len(used), len(quads), len(order), len(joint_names), len(dense), len(sparse), len(proxies), len(mask), len(lips), len(out)))
 
 
 if __name__ == "__main__":

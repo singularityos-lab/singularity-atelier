@@ -135,7 +135,8 @@ namespace Singularity.Apps.Atelier {
         private void build_collider () {
             var m = body.mesh;
             sdf = AtCore.Sdf.build (m.positions, body.solid_vertices, body.solid_triangles, body.solid_triangles.length, 8, 70);
-            cloth.set_collider (sdf, (float) (2 + spacing * 0.13));
+            double chosen = settings.look_number ("skin_offset", 0);
+            cloth.set_collider (sdf, (float) (chosen > 0 ? chosen : 2 + spacing * 0.13));
         }
 
         public void set_body (Body next) {

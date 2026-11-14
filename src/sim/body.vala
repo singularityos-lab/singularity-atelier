@@ -179,7 +179,11 @@ namespace Singularity.Apps.Atelier {
         public int[] proxy_vert = {};
         public float[] proxy_weight = {};
         public uint[] proxy_tris = {};
+        public int[] proxy_hide_first = {};
+        public int[] proxy_hide_count = {};
+        public int[] proxy_hide = {};
         public bool[] brow = {};
+        public float[] lips = {};
         private static BodyData? instance;
 
         public const uint8 PART_TORSO = 0;
@@ -319,6 +323,8 @@ namespace Singularity.Apps.Atelier {
             sparse_delta = new float[del.length];
             for (int i = 0; i < del.length; i++) sparse_delta[i] = del[i];
             brow = new bool[nv];
+            lips = new float[nv];
+            for (int i = 0; i < nv; i++) lips[i] = -0.22f;
             if (version >= 2) {
                 int np = (int) u32 (d, ref o);
                 string[] l_names = {};
@@ -328,6 +334,9 @@ namespace Singularity.Apps.Atelier {
                 int[] l_tri_count = {};
                 int[] l_ref = {};
                 float[] l_den = {};
+                int[] l_hide_first = {};
+                int[] l_hide_count = {};
+                var hidden = new GenericArray<int> ();
                 var verts = new GenericArray<int> ();
                 var weights = new GenericArray<float?> ();
                 var tris = new GenericArray<uint> ();
@@ -349,7 +358,15 @@ namespace Singularity.Apps.Atelier {
                         for (int q = 0; q < 6; q++) weights.add (f32 (d, ref o));
                     }
                     for (int k = 0; k < nt * 3; k++) tris.add ((uint) u16 (d, ref o));
+                    l_hide_first += hidden.length;
+                    int gone = version >= 3 ? (int) u32 (d, ref o) : 0;
+                    l_hide_count += gone;
+                    for (int k = 0; k < gone; k++) hidden.add (u16 (d, ref o));
                 }
+                proxy_hide_first = l_hide_first;
+                proxy_hide_count = l_hide_count;
+                proxy_hide = new int[hidden.length];
+                for (int i = 0; i < hidden.length; i++) proxy_hide[i] = hidden[i];
                 proxy_names = l_names;
                 proxy_first = l_first;
                 proxy_count = l_count;
@@ -365,6 +382,13 @@ namespace Singularity.Apps.Atelier {
                 for (int i = 0; i < tris.length; i++) proxy_tris[i] = tris[i];
                 int nm = (int) u32 (d, ref o);
                 for (int i = 0; i < nm; i++) brow[u16 (d, ref o)] = true;
+                if (version >= 5) {
+                    int nl = (int) u32 (d, ref o);
+                    for (int i = 0; i < nl; i++) {
+                        int at = u16 (d, ref o);
+                        lips[at] = d[o++] / 255.0f - 0.22f;
+                    }
+                }
             }
             classify ();
             orient ();
@@ -488,6 +512,13 @@ namespace Singularity.Apps.Atelier {
                 case "t-pose":
                     p.arm = 88;
                     break;
+                case "arms-down":
+                    p.arm = 7;
+                    p.elbow = 4;
+                    p.leg = 2;
+                    break;
+                case "custom":
+                    break;
                 case "relaxed":
                     p.arm = 16;
                     p.elbow = 10;
@@ -507,17 +538,34 @@ namespace Singularity.Apps.Atelier {
         }
 
         public static string[] ids () {
-            return { "a-pose", "t-pose", "relaxed", "walk" };
+            return { "a-pose", "t-pose", "relaxed", "arms-down", "walk", "custom" };
         }
 
         public static string label (string id) {
             switch (id) {
                 case "t-pose": return _("T-Pose");
                 case "relaxed": return _("Relaxed");
+                case "arms-down": return _("Arms Down");
+                case "custom": return _("Custom");
                 case "walk": return _("Walking");
                 default: return _("A-Pose");
             }
         }
+    }
+
+    public class BodyLook {
+        public string hair = "";
+        public Rgba hair_color = Rgba (0.20, 0.13, 0.10, 1);
+        public Rgba skin = Rgba (0.80, 0.63, 0.54, 1);
+        public Rgba eyes = Rgba (0.30, 0.21, 0.14, 1);
+        public Rgba lips = Rgba (0.72, 0.42, 0.40, 1);
+        public Rgba underwear = Rgba (0.87, 0.86, 0.84, 1);
+        public bool shoes;
+        public Rgba shoes_color = Rgba (0.12, 0.11, 0.11, 1);
+        public bool hat;
+        public Rgba hat_color = Rgba (0.25, 0.22, 0.20, 1);
+        public double gaze_x;
+        public double gaze_y;
     }
 
     public class BodyMeasures {
@@ -557,6 +605,7 @@ namespace Singularity.Apps.Atelier {
         public float[] posed_joints = {};
         public BodyMeasures measures;
         public Scene.Mesh mesh;
+        public BodyLook look = new BodyLook ();
         public string hair = "";
         public Rgba hair_color = Rgba (0.20, 0.13, 0.10, 1);
         public uint[] solid_triangles = {};
@@ -564,10 +613,11 @@ namespace Singularity.Apps.Atelier {
         public Gee.ArrayList<Scene.Mesh> extras = new Gee.ArrayList<Scene.Mesh> ();
         private BodyData data;
 
-        public static Body build (BodyShape shape, BodyPose pose, string hair = "", Rgba? hair_color = null) {
+        public static Body build (BodyShape shape, BodyPose pose, BodyLook? look = null) {
             var b = new Body ();
-            b.hair = hair;
-            if (hair_color != null) b.hair_color = hair_color;
+            b.look = look ?? new BodyLook ();
+            b.hair = b.look.hair;
+            b.hair_color = b.look.hair_color;
             b.data = BodyData.get_default ();
             b.shape = shape;
             b.pose = pose;
@@ -863,10 +913,11 @@ namespace Singularity.Apps.Atelier {
             mesh.name = "avatar";
             int n = data.nrender;
             soften (posed, n);
+            if (look.gaze_x != 0 || look.gaze_y != 0) turn_eyes (data.bone ("eye.L"), data.bone ("eye.R"));
             mesh.positions = posed[0:n * 3];
             mesh.triangles = data.triangles;
             mesh.compute_normals ();
-            mesh.material.color = Gdk.RGBA () { red = 0.80f, green = 0.63f, blue = 0.54f, alpha = 1 };
+            mesh.material.color = Gdk.RGBA () { red = (float) look.skin.r, green = (float) look.skin.g, blue = (float) look.skin.b, alpha = 1 };
             mesh.material.roughness = 0.62;
             mesh.material.sheen = 0.12;
             split_eyes ();
@@ -915,27 +966,47 @@ namespace Singularity.Apps.Atelier {
             solid_triangles = data.triangles;
             solid_vertices = n0;
             var grown = new Grow (mesh.positions);
+            var gone = new bool[n0];
+            foreach (unowned string worn in new string[] { look.shoes ? "shoes01" : "", look.hat ? "fedora01" : "" }) {
+                for (int q = 0; q < data.proxy_names.length; q++) {
+                    if (worn == "" || data.proxy_names[q] != worn) continue;
+                    for (int k = 0; k < data.proxy_hide_count[q]; k++) gone[data.proxy_hide[data.proxy_hide_first[q] + k]] = true;
+                }
+            }
+            uint[] mouth = {};
             uint[] wear = {};
             uint[] skin = {};
             uint[] brows = {};
             uint[] white = {};
             uint[] iris = {};
             uint[] pupil = {};
-            var pole = new int[2] { -1, -1 };
+            var centre = new Vec3[2];
+            var seen = new int[2];
             for (int i = 0; i < data.nrender; i++) {
                 int b = data.skin_bone[i * 4];
                 int e = b == left ? 0 : (b == right ? 1 : -1);
                 if (e < 0 || data.skin_weight[i * 4] < 250) continue;
-                if (pole[e] < 0 || posed[i * 3 + 2] > posed[pole[e] * 3 + 2]) pole[e] = i;
+                centre[e] = centre[e].add (Vec3 (posed[i * 3], posed[i * 3 + 1], posed[i * 3 + 2]));
+                seen[e]++;
             }
-            double size = shape.scale;
+            for (int e = 0; e < 2; e++) if (seen[e] > 0) centre[e] = centre[e].scale (1.0 / seen[e]);
+            var axis = Vec3 (0, 0, 1).rotate_x (-look.gaze_y * Math.PI / 180).rotate_y (look.gaze_x * Math.PI / 180);
             for (int t = 0; t + 2 < tri.length; t += 3) {
                 int b = data.skin_bone[tri[t] * 4];
                 int e = b == left ? 0 : (b == right ? 1 : -1);
-                if (e < 0 || data.skin_weight[tri[t] * 4] < 250 || pole[e] < 0) {
+                if (e < 0 || data.skin_weight[tri[t] * 4] < 250 || seen[e] == 0) {
                     bool hairy = data.brow[tri[t]] && data.brow[tri[t + 1]] && data.brow[tri[t + 2]];
+                    if (gone[tri[t]] && gone[tri[t + 1]] && gone[tri[t + 2]]) continue;
                     if (hairy) {
                         for (int k = 0; k < 3; k++) brows += tri[t + k];
+                        continue;
+                    }
+                    if (data.lips[tri[t]] > 0 || data.lips[tri[t + 1]] > 0 || data.lips[tri[t + 2]] > 0) {
+                        var red = new GenericArray<uint> ();
+                        var plain = new GenericArray<uint> ();
+                        grown.clip ({ tri[t], tri[t + 1], tri[t + 2] }, data.lips, red, plain);
+                        for (int q = 0; q < red.length; q++) mouth += red[q];
+                        for (int q = 0; q < plain.length; q++) skin += plain[q];
                         continue;
                     }
                     var inside = new GenericArray<uint> ();
@@ -952,11 +1023,12 @@ namespace Singularity.Apps.Atelier {
                 double far = 0;
                 for (int k = 0; k < 3; k++) {
                     uint v = tri[t + k];
-                    far = double.max (far, Math.hypot (posed[v * 3] - posed[pole[e] * 3], posed[v * 3 + 1] - posed[pole[e] * 3 + 1]));
+                    var dir = Vec3 (posed[v * 3], posed[v * 3 + 1], posed[v * 3 + 2]).sub (centre[e]).normalized ();
+                    far = double.max (far, Math.acos (dir.dot (axis).clamp (-1, 1)));
                 }
                 for (int k = 0; k < 3; k++) {
-                    if (far < 2.4 * size) pupil += tri[t + k];
-                    else if (far < 6.4 * size) iris += tri[t + k];
+                    if (far < 0.2) pupil += tri[t + k];
+                    else if (far < 0.56) iris += tri[t + k];
                     else white += tri[t + k];
                 }
             }
@@ -966,6 +1038,7 @@ namespace Singularity.Apps.Atelier {
             foreach (uint v in skin) all += v;
             foreach (uint v in wear) all += v;
             foreach (uint v in brows) all += v;
+            foreach (uint v in mouth) all += v;
             foreach (uint v in white) all += v;
             foreach (uint v in iris) all += v;
             foreach (uint v in pupil) all += v;
@@ -973,21 +1046,110 @@ namespace Singularity.Apps.Atelier {
             mesh.compute_normals ();
             mesh.triangles = skin;
             extras.add (part (white, 0.93f, 0.92f, 0.90f, 0.25));
-            extras.add (part (iris, 0.30f, 0.21f, 0.14f, 0.2));
+            extras.add (part (iris, (float) look.eyes.r, (float) look.eyes.g, (float) look.eyes.b, 0.2));
+            extras.add (part (mouth, (float) look.lips.r, (float) look.lips.g, (float) look.lips.b, 0.45));
             extras.add (part (pupil, 0.03f, 0.03f, 0.03f, 0.15));
-            extras.add (part (wear, 0.87f, 0.86f, 0.84f, 0.85));
+            var wear_mesh = part (wear, (float) look.underwear.r, (float) look.underwear.g, (float) look.underwear.b, 0.85);
+            wear_mesh.pickable = true;
+            extras.add (wear_mesh);
             var brow_mesh = part (brows, (float) (hair_color.r * 0.85), (float) (hair_color.g * 0.85), (float) (hair_color.b * 0.85), 0.8);
             extras.add (brow_mesh);
-            add_hair ();
+            add_proxy (hair, hair_color, 0.55, 0.5);
+            if (look.shoes) add_proxy ("shoes01", look.shoes_color, 0.45, 0.1);
+            if (look.hat) add_proxy ("fedora01", look.hat_color, 0.8, 0.2);
+        }
+
+        private void turn_eyes (int left, int right) {
+            int[] bones = { left, right };
+            foreach (int bone in bones) {
+                double cx = 0, cy = 0, cz = 0;
+                int count = 0;
+                for (int i = 0; i < data.nrender; i++) {
+                    if (data.skin_bone[i * 4] != bone || data.skin_weight[i * 4] < 250) continue;
+                    cx += posed[i * 3];
+                    cy += posed[i * 3 + 1];
+                    cz += posed[i * 3 + 2];
+                    count++;
+                }
+                if (count == 0) continue;
+                var centre = Vec3 (cx / count, cy / count, cz / count);
+                double yaw = look.gaze_x * Math.PI / 180, pitch = -look.gaze_y * Math.PI / 180;
+                for (int i = 0; i < data.nrender; i++) {
+                    if (data.skin_bone[i * 4] != bone || data.skin_weight[i * 4] < 250) continue;
+                    var v = Vec3 (posed[i * 3], posed[i * 3 + 1], posed[i * 3 + 2]).sub (centre).rotate_x (pitch).rotate_y (yaw).add (centre);
+                    posed[i * 3] = (float) v.x;
+                    posed[i * 3 + 1] = (float) v.y;
+                    posed[i * 3 + 2] = (float) v.z;
+                }
+            }
+        }
+
+        public double tape (Vec3 at, out Vec3[] ring) {
+            ring = {};
+            int n = data.nrender;
+            int nearest = -1;
+            double best = double.INFINITY;
+            for (int i = 0; i < n; i++) {
+                double d = Vec3 (posed[i * 3], posed[i * 3 + 1], posed[i * 3 + 2]).distance (at);
+                if (d < best) {
+                    best = d;
+                    nearest = i;
+                }
+            }
+            if (nearest < 0) return 0;
+            uint8 where = data.part[nearest];
+            bool limb = where != BodyData.PART_TORSO && where != BodyData.PART_HEAD;
+            double side = at.x >= 0 ? 1 : -1;
+            unowned uint[] tri = data.triangles;
+            double[] xs = {};
+            double[] zs = {};
+            float fy = (float) at.y;
+            for (int t = 0; t + 2 < tri.length; t += 3) {
+                uint[] v = { tri[t], tri[t + 1], tri[t + 2] };
+                bool same = limb ? data.part[v[0]] == where && posed[v[0] * 3] * side >= 0 : data.part[v[0]] != BodyData.PART_ARM;
+                if (!same) continue;
+                for (int e = 0; e < 3; e++) {
+                    uint p = v[e], q = v[(e + 1) % 3];
+                    float py = posed[p * 3 + 1], qy = posed[q * 3 + 1];
+                    if ((py - fy) * (qy - fy) >= 0) continue;
+                    float k = (fy - py) / (qy - py);
+                    xs += posed[p * 3] + (posed[q * 3] - posed[p * 3]) * k;
+                    zs += posed[p * 3 + 2] + (posed[q * 3 + 2] - posed[p * 3 + 2]) * k;
+                }
+            }
+            int count = xs.length;
+            if (count < 3) return 0;
+            double mx = 0, mz = 0;
+            for (int i = 0; i < count; i++) {
+                mx += xs[i];
+                mz += zs[i];
+            }
+            mx /= count;
+            mz /= count;
+            Vec3[] loop = {};
+            for (int s = 0; s < 72; s++) {
+                double a = 2 * Math.PI * s / 72, far = 0;
+                double dx = Math.cos (a), dz = Math.sin (a);
+                for (int i = 0; i < count; i++) {
+                    double along = (xs[i] - mx) * dx + (zs[i] - mz) * dz;
+                    double across = ((xs[i] - mx) * dz - (zs[i] - mz) * dx).abs ();
+                    if (across < 12 && along > far) far = along;
+                }
+                loop += Vec3 (mx + dx * far, at.y, mz + dz * far);
+            }
+            ring = loop;
+            return hull_perimeter (xs, zs);
         }
 
         public static string[] hair_styles () {
-            return BodyData.get_default ().proxy_names;
+            string[] names = {};
+            foreach (unowned string n in BodyData.get_default ().proxy_names) if (!n.has_prefix ("shoes") && !n.has_prefix ("fedora")) names += n;
+            return names;
         }
 
-        private void add_hair () {
+        private void add_proxy (string wanted, Rgba color, double roughness, double sheen) {
             int index = -1;
-            for (int i = 0; i < data.proxy_names.length; i++) if (data.proxy_names[i] == hair) index = i;
+            for (int i = 0; i < data.proxy_names.length; i++) if (data.proxy_names[i] == wanted) index = i;
             if (index < 0) return;
             int count = data.proxy_count[index], first = data.proxy_first[index];
             var factor = new double[3];
@@ -997,7 +1159,7 @@ namespace Singularity.Apps.Atelier {
                 factor[a] = den > 0 ? ((double) rest[ra * 3 + a] - rest[rb * 3 + a]).abs () / den : 100 * shape.scale;
             }
             var m = new Scene.Mesh ();
-            m.name = "hair";
+            m.name = wanted;
             m.positions = new float[count * 3];
             for (int k = 0; k < count; k++) {
                 int v = (first + k) * 3, w = (first + k) * 6;
@@ -1010,9 +1172,9 @@ namespace Singularity.Apps.Atelier {
             m.triangles = data.proxy_tris[data.proxy_tri_first[index]:data.proxy_tri_first[index] + data.proxy_tri_count[index]];
             m.compute_normals ();
             m.pickable = false;
-            m.material.color = Gdk.RGBA () { red = (float) hair_color.r, green = (float) hair_color.g, blue = (float) hair_color.b, alpha = 1 };
-            m.material.roughness = 0.55;
-            m.material.sheen = 0.5;
+            m.material.color = Gdk.RGBA () { red = (float) color.r, green = (float) color.g, blue = (float) color.b, alpha = 1 };
+            m.material.roughness = roughness;
+            m.material.sheen = sheen;
             m.material.double_sided = true;
             extras.add (m);
         }
@@ -1326,11 +1488,12 @@ namespace Singularity.Apps.Atelier {
             foreach (unowned string n in names) set_param (s, n, next);
         }
 
-        public static BodyShape fit (BodyDims d, string gender) {
+        public static BodyShape fit (BodyDims d, string gender, double muscle = 0, double cup = 0.45) {
             var s = new BodyShape ();
             s.gender = gender == "male" ? "male" : "female";
             if (!BodyData.get_default ().valid ()) return s;
-            if (s.gender == "female") s.cup = 0.45;
+            s.muscle = muscle;
+            if (s.gender == "female") s.cup = cup;
             var m = Body.rest_measures (s);
             s.scale = d.height / double.max (1, m.height);
             double target = d.waist + d.hip;

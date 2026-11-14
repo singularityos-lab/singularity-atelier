@@ -32,6 +32,17 @@ void test_body () {
     check ((lo.x + hi.x).abs () < 6, "body is centred %.1f".printf (lo.x + hi.x));
     var wl = body.joint ("wrist.L"), wr = body.joint ("wrist.R");
     check ((wl.x + wr.x).abs () < 3 && (wl.y - wr.y).abs () < 3, "arms are symmetric");
+    Vec3[] ring;
+    double taped = body.tape (Vec3 (0, m.y_waist, 200), out ring);
+    check ((taped - m.waist).abs () < 25 && ring.length == 72, "tape at the waist reads %.0f for a %.0f waist".printf (taped, m.waist));
+    var styled = new BodyLook ();
+    styled.hair = "long01";
+    styled.shoes = true;
+    styled.hat = true;
+    styled.gaze_x = 15;
+    var dressed = Body.build (shape, BodyPose.named ("custom"), styled);
+    check (dressed.extras.size >= 9, "styled avatar has eyes, lips, underwear, hair, shoes and hat (%d parts)".printf (dressed.extras.size));
+    check (Body.hair_styles ().length == 10, "ten hair styles, got %d".printf (Body.hair_styles ().length));
     var tp = Body.build (shape, BodyPose.named ("t-pose"));
     check (tp.joint ("wrist.L").y > wl.y + 150, "t-pose raises the wrists");
     var relaxed = Body.build (shape, BodyPose.named ("relaxed"));

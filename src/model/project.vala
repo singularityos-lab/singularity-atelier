@@ -9,6 +9,21 @@ namespace Singularity.Apps.Atelier {
         public string pose = "a-pose";
         public string avatar_gender = "";
         public bool auto_sew = true;
+        public Gee.HashMap<string, string> look = new Gee.HashMap<string, string> ();
+
+        public string look_text (string key, string fallback) {
+            return look.has_key (key) ? look[key] : fallback;
+        }
+
+        public double look_number (string key, double fallback) {
+            return look.has_key (key) ? double.parse (look[key]) : fallback;
+        }
+
+        public void set_look_number (string key, double v) {
+            char[] buf = new char[double.DTOSTR_BUF_SIZE];
+            look[key] = v.format (buf, "%.4f");
+        }
+
         public string avatar_hair = "auto";
         public string avatar_hair_color = "#33211a";
 

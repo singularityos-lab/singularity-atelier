@@ -20,6 +20,9 @@ namespace Singularity.Apps.Atelier {
         private ActionRow status_row;
         private Button simulate_button;
         private Box seam_box;
+        private bool measuring;
+        private Vec3[] tape_ring = {};
+        private ActionRow tape_row;
         private Box shape_box;
         private Box measure_box;
         private Box fabric_list;
@@ -88,7 +91,14 @@ namespace Singularity.Apps.Atelier {
             append (pages);
 
             view.overlay.connect ((o) => {
-                if (!get_mapped () || sim == null) return;
+                if (!get_mapped ()) return;
+                if (tape_ring.length > 2) {
+                    var yellow = Gdk.RGBA () { red = 0.98f, green = 0.78f, blue = 0.12f, alpha = 1 };
+                    Scene.Vec3[] loop = {};
+                    foreach (var q in tape_ring) loop += Scene.Vec3 (q.x, q.y, q.z);
+                    o.polyline (loop, yellow, 3, false, true);
+                }
+                if (sim == null) return;
                 int n = sim.stitch_count ();
                 for (int i = 0; i < n; i++) {
                     Vec3 a, b;
@@ -182,6 +192,74 @@ namespace Singularity.Apps.Atelier {
         private string gender () {
             string g = project.garment.avatar_gender != "" ? project.garment.avatar_gender : project.pattern.table.gender;
             return g == "male" ? "male" : "female";
+        }
+
+        private BodyPose pose () {
+            var g = project.garment;
+            var p = BodyPose.named (g.pose);
+            if (g.pose != "custom") return p;
+            p.arm = g.look_number ("pose_arm", 42);
+            p.arm_forward = g.look_number ("pose_forward", 0);
+            p.elbow = g.look_number ("pose_elbow", 6);
+            p.leg = g.look_number ("pose_leg", 6);
+            return p;
+        }
+
+        private BodyLook look () {
+            var g = project.garment;
+            var l = new BodyLook ();
+            l.hair = hair ();
+            l.hair_color = Rgba.parse (g.avatar_hair_color);
+            l.skin = Rgba.parse (g.look_text ("skin", "#cca18a"));
+            l.eyes = Rgba.parse (g.look_text ("eyes", "#4d3624"));
+            l.lips = Rgba.parse (g.look_text ("lips", "#b86b66"));
+            l.underwear = Rgba.parse (g.look_text ("underwear", "#dedbd6"));
+            l.shoes = g.look_text ("shoes", "0") == "1";
+            l.shoes_color = Rgba.parse (g.look_text ("shoes_color", "#1f1c1c"));
+            l.hat = g.look_text ("hat", "0") == "1";
+            l.hat_color = Rgba.parse (g.look_text ("hat_color", "#403833"));
+            l.gaze_x = g.look_number ("gaze_x", 0);
+            l.gaze_y = g.look_number ("gaze_y", 0);
+            return l;
+        }
+
+        private void color_row (PreferencesGroup group, string title, string key, string fallback) {
+            var row = new ActionRow (title);
+            var start = Rgba.parse (project.garment.look_text (key, fallback));
+            var picker = new ColorPickerButton (Gdk.RGBA () { red = (float) start.r, green = (float) start.g, blue = (float) start.b, alpha = 1 });
+            picker.valign = Align.CENTER;
+            picker.color_changed.connect ((col) => {
+                project.garment.look[key] = Rgba (col.red, col.green, col.blue, 1).to_hex ();
+                project.touch ("garment");
+                body_changed ();
+            });
+            row.add_suffix (picker);
+            group.add_row (row);
+        }
+
+        private void toggle_row (PreferencesGroup group, string title, string key) {
+            var row = new SwitchRow (title);
+            row.active = project.garment.look_text (key, "0") == "1";
+            row.notify["active"].connect (() => {
+                project.garment.look[key] = row.active ? "1" : "0";
+                project.touch ("garment");
+                body_changed ();
+            });
+            group.add_row (row);
+        }
+
+        private SpinRow number_row (PreferencesGroup group, string title, string? subtitle, string key, double lo, double hi, double step, int digits, double fallback, bool custom_pose = false) {
+            var row = new SpinRow (title, subtitle, lo, hi, step, project.garment.look_number (key, fallback));
+            row.spin_btn.digits = digits;
+            row.spin_btn.value_changed.connect (() => {
+                project.garment.set_look_number (key, row.value);
+                if (custom_pose) project.garment.pose = "custom";
+                project.touch ("garment");
+                if (key == "skin_offset") stale = true;
+                body_changed ();
+            });
+            group.add_row (row);
+            return row;
         }
 
         private string hair () {
@@ -279,6 +357,45 @@ namespace Singularity.Apps.Atelier {
             custom_row.add_suffix (hair_picker);
             avatar.add_row (custom_row);
             page.append (avatar);
+
+            var looks = new PreferencesGroup (_("Appearance"));
+            color_row (looks, _("Skin"), "skin", "#cca18a");
+            color_row (looks, _("Eyes"), "eyes", "#4d3624");
+            color_row (looks, _("Lips"), "lips", "#b86b66");
+            color_row (looks, _("Underwear"), "underwear", "#dedbd6");
+            toggle_row (looks, _("Shoes"), "shoes");
+            color_row (looks, _("Shoe Colour"), "shoes_color", "#1f1c1c");
+            toggle_row (looks, _("Hat"), "hat");
+            color_row (looks, _("Hat Colour"), "hat_color", "#403833");
+            number_row (looks, _("Gaze Sideways"), _("In degrees"), "gaze_x", -30, 30, 1, 0, 0);
+            number_row (looks, _("Gaze Up and Down"), _("In degrees"), "gaze_y", -25, 25, 1, 0, 0);
+            page.append (looks);
+
+            var build = new PreferencesGroup (_("Build"));
+            number_row (build, _("Muscle"), _("From slender to athletic"), "muscle", -1, 1, 0.05, 2, 0);
+            number_row (build, _("Cup"), _("From flat to full"), "cup", -0.5, 1.5, 0.05, 2, 0.45);
+            number_row (build, _("Skin Offset"), _("Gap kept between cloth and body, 0 picks it from the particle distance"), "skin_offset", 0, 15, 0.5, 1, 0);
+            page.append (build);
+
+            var posing = new PreferencesGroup (_("Custom Pose"), _("Changing a value switches the pose to Custom."));
+            number_row (posing, _("Arms Away from the Body"), _("In degrees"), "pose_arm", 0, 150, 1, 0, 42, true);
+            number_row (posing, _("Arms Forward"), _("In degrees"), "pose_forward", -40, 80, 1, 0, 0, true);
+            number_row (posing, _("Elbow Bend"), _("In degrees"), "pose_elbow", 0, 120, 1, 0, 6, true);
+            number_row (posing, _("Legs Apart"), _("In degrees"), "pose_leg", 0, 35, 1, 0, 6, true);
+            page.append (posing);
+
+            var tape = new PreferencesGroup (_("Tape Measure"));
+            var tape_switch = new SwitchRow (_("Measure on Click"), _("Click the body to read the circumference at that height"));
+            tape_switch.notify["active"].connect (() => {
+                measuring = tape_switch.active;
+                if (!measuring) tape_ring = {};
+                view.queue_render ();
+            });
+            tape.add_row (tape_switch);
+            tape_row = new ActionRow (_("No Measurement Yet"));
+            tape.add_row (tape_row);
+            page.append (tape);
+
             measure_box = new Box (Orientation.VERTICAL, 0);
             page.append (measure_box);
             rebuild_measures ();
@@ -660,15 +777,21 @@ namespace Singularity.Apps.Atelier {
             var d = dims ();
             string key = gender ();
             foreach (unowned string name in BodyDims.FIELDS) key += " %.0f".printf (d.field (name));
-            string full = key + " " + project.garment.pose + " " + hair () + " " + project.garment.avatar_hair_color;
+            var g = project.garment;
+            double muscle = g.look_number ("muscle", 0), cup = g.look_number ("cup", 0.45);
+            key += " %.2f %.2f".printf (muscle, cup);
+            var sig = new StringBuilder (key);
+            sig.append_printf (" %s %s %s", g.pose, hair (), g.avatar_hair_color);
+            foreach (var lk in g.look.keys) sig.append_printf (" %s=%s", lk, g.look[lk]);
+            string full = sig.str;
             if (body != null && body_key == full) return;
             if (fits == null) fits = new HashTable<string, BodyShape> (str_hash, str_equal);
             BodyShape? shape = fits[key];
             if (shape == null) {
-                shape = BodyFit.fit (d, gender ());
+                shape = BodyFit.fit (d, gender (), muscle, cup);
                 fits[key] = shape;
             }
-            body = Body.build (shape, BodyPose.named (project.garment.pose), hair (), Rgba.parse (project.garment.avatar_hair_color));
+            body = Body.build (shape, pose (), look ());
             body_key = full;
             if (sim != null) sim.set_body (body);
         }
@@ -835,7 +958,22 @@ namespace Singularity.Apps.Atelier {
         }
 
         private bool on_press (double x, double y, Gdk.ModifierType state) {
-            if (!get_mapped () || sim == null) return false;
+            if (!get_mapped ()) return false;
+            if (measuring && body != null) {
+                Scene.Hit found;
+                var touched = view.native_at (x, y, out found);
+                if (touched != null && (touched == body.mesh || body.extras.contains (touched))) {
+                    Vec3[] ring;
+                    double girth = body.tape (Vec3 (found.point.x, found.point.y, found.point.z), out ring);
+                    tape_ring = ring;
+                    double unit = project.pattern.unit_mm ();
+                    tape_row.title = "%s %s".printf (Singularity.Vector.PathData.fmt (girth / unit, 1), project.pattern.unit);
+                    tape_row.subtitle = _("Circumference at %s %s from the floor").printf (Singularity.Vector.PathData.fmt (found.point.y / unit, 1), project.pattern.unit);
+                    view.queue_render ();
+                }
+                return false;
+            }
+            if (sim == null) return false;
             Scene.Hit hit;
             var piece = piece_of (view.native_at (x, y, out hit));
             if (piece == null) return false;

@@ -352,6 +352,11 @@ namespace Singularity.Apps.Atelier {
                 case "block":
                     win.garment_panel.use_block (a[1]);
                     return 900;
+                case "look":
+                    win.project.garment.look[a[1]] = a[2];
+                    if (a[1].has_prefix ("pose_")) win.project.garment.pose = "custom";
+                    win.garment_panel.avatar_updated ();
+                    return 2000;
                 case "avatar":
                     win.project.garment.avatar_gender = a[1];
                     if (a.length > 2) win.project.garment.avatar_hair = a[2];
