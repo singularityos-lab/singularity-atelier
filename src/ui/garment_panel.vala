@@ -7,8 +7,6 @@ namespace Singularity.Apps.Atelier {
         private Project project;
         private View3D view;
         private GarmentCanvas canvas;
-        private Box seam_box;
-        public ToolPalette palette { get; private set; }
         private GarmentSim? sim;
         private Body? body;
         private string body_key = "";
@@ -21,20 +19,31 @@ namespace Singularity.Apps.Atelier {
         private string size;
         private ActionRow status_row;
         private Button simulate_button;
-        private SelectionRow size_row;
-        private Box fabric_box;
+        private Box seam_box;
+        private Box measure_box;
+        private Box fabric_list;
+        private Box fabric_props;
+        private Box piece_box;
+        private Stack pages;
         private string fit_map = "material";
+        private string selected_fabric = "";
         private bool stale = true;
         private bool grabbing;
+        private uint body_timer;
         private Scene.Vec3 grab_point;
         private static HashTable<string, BodyShape>? fits;
 
+        public ToolPalette palette { get; private set; }
         public signal void message (string text);
 
         public GarmentPanel (Project project, View3D view, GarmentCanvas canvas) {
             this.project = project;
             this.view = view;
             this.canvas = canvas;
+            size = project.pattern.active_size != "" ? project.pattern.active_size : project.pattern.table.base_size;
+            project.garment.ensure_fabrics ();
+            selected_fabric = project.garment.fabrics[0].id;
+
             palette = new ToolPalette ();
             palette.add_tool ("select", "atelier-pointer-symbolic", _("Select (A)"));
             palette.add_tool ("sew", "atelier-stitch-symbolic", _("Segment Sewing (N)"));
@@ -49,99 +58,25 @@ namespace Singularity.Apps.Atelier {
             });
             canvas.selection_changed.connect (() => {
                 rebuild_seam_box ();
+                rebuild_piece_box ();
                 view.queue_render ();
             });
-            size = project.pattern.active_size != "" ? project.pattern.active_size : project.pattern.table.base_size;
 
-            var avatar = new PreferencesGroup (_("Avatar"));
-            string[] sizes = {};
-            foreach (var s in project.pattern.table.sizes) sizes += s;
-            if (sizes.length == 0) sizes += size;
-            size_row = new SelectionRow (_("Size"), sizes, size);
-            size_row.selected.connect ((s) => {
-                size = s;
-                stale = true;
-                refresh ();
-            });
-            avatar.add_row (size_row);
-            string[] pose_labels = {};
-            foreach (var id in BodyPose.ids ()) pose_labels += BodyPose.label (id);
-            var pose_row = new SelectionRow (_("Pose"), pose_labels, BodyPose.label (project.garment.pose));
-            pose_row.selected.connect ((label) => {
-                foreach (var id in BodyPose.ids ()) if (BodyPose.label (id) == label) project.garment.pose = id;
-                project.touch ("garment");
-                refresh ();
-            });
-            avatar.add_row (pose_row);
-            append (avatar);
-
-            var simg = new PreferencesGroup (_("Simulation"), _("Pieces are arranged around the avatar and sewn. Drag the cloth while it runs."));
-            simulate_button = Dialogs.header_button (simg, _("Simulate"), () => toggle (), true);
-            status_row = new ActionRow (_("Ready"), _("Not simulated yet"));
-            simg.add_row (status_row);
-            Dialogs.button_row (simg, _("Reset Arrangement"), _("Puts the pieces back around the avatar"), _("Reset"), () => {
-                stop ();
-                stale = true;
-                ensure_sim ();
-                status_row.title = _("Ready");
-                status_row.subtitle = _("Not simulated yet");
-            });
-            var spacing = new SpinRow (_("Particle Distance"), _("In millimetres, smaller is finer and slower"), 5, 60, 1, project.garment.resolution);
-            spacing.spin_btn.value_changed.connect (() => {
-                project.garment.resolution = (int) spacing.value;
-                stale = true;
-            });
-            simg.add_row (spacing);
-            append (simg);
-
-            var sewing = new PreferencesGroup (_("Sewing"), _("Sew edges in the pattern window with the sewing tools."));
-            Dialogs.header_button (sewing, _("Auto Sew"), () => {
-                if (sim == null) return;
-                sim.auto_sew (project.pattern.evaluate (size));
-                project.touch ("garment");
-                canvas.selected_seam = -1;
-                canvas.queue_draw ();
-                rebuild_seam_box ();
-                view.queue_render ();
-            }, false);
-            append (sewing);
-            seam_box = new Box (Orientation.VERTICAL, 0);
-            append (seam_box);
-
-            var fabric = new PreferencesGroup (_("Fabric"));
-            string[] labels = {};
-            foreach (var f in FabricPreset.all ()) labels += f.name;
-            var default_row = new SelectionRow (_("Default Fabric"), labels, FabricPreset.find (project.garment.fabric_preset).name);
-            default_row.selected.connect ((label) => {
-                project.garment.fabric_preset = preset_by_name (label).id;
-                project.touch ("garment");
-                apply_fabrics ();
-            });
-            fabric.add_row (default_row);
-            append (fabric);
-            fabric_box = new Box (Orientation.VERTICAL, 0);
-            append (fabric_box);
-
-            var fit = new PreferencesGroup (_("Fit Map"));
-            string[] maps = { "material", "strain", "distance", "wireframe" };
-            string[] map_labels = { _("Fabric"), _("Tension"), _("Distance"), _("Mesh") };
-            var fit_row = new SelectionRow (_("Show"), map_labels, map_labels[0]);
-            fit_row.selected.connect ((label) => {
-                string m = "material";
-                for (int i = 0; i < maps.length; i++) if (map_labels[i] == label) m = maps[i];
-                fit_map = m;
-                if (sim != null) {
-                    sim.map = m;
-                    sim.sync ();
-                }
-                view.shading = m;
-            });
-            fit.add_row (fit_row);
-            append (fit);
+            pages = new Stack ();
+            pages.vhomogeneous = false;
+            pages.transition_type = StackTransitionType.CROSSFADE;
+            pages.add_titled (simulation_page (), "simulation", _("Simulation"));
+            pages.add_titled (avatar_page (), "avatar", _("Avatar"));
+            pages.add_titled (fabric_page (), "fabric", _("Fabric"));
+            var tabs = new BubbleSwitcher (pages);
+            tabs.margin_top = 4;
+            tabs.margin_bottom = 8;
+            append (tabs);
+            append (pages);
 
             view.overlay.connect ((o) => {
                 if (!get_mapped () || sim == null) return;
-                    int n = sim.stitch_count ();
+                int n = sim.stitch_count ();
                 for (int i = 0; i < n; i++) {
                     Vec3 a, b;
                     int seam = sim.stitch (i, out a, out b);
@@ -166,6 +101,384 @@ namespace Singularity.Apps.Atelier {
             });
             view.add_controller (keys);
             refresh ();
+        }
+
+        private Widget simulation_page () {
+            var page = new Box (Orientation.VERTICAL, 0);
+            var simg = new PreferencesGroup (_("Simulation"), _("Pieces are arranged around the avatar and sewn. Drag the cloth while it runs."));
+            simulate_button = Dialogs.header_button (simg, _("Simulate"), () => toggle (), true);
+            status_row = new ActionRow (_("Ready"), _("Not simulated yet"));
+            simg.add_row (status_row);
+            Dialogs.button_row (simg, _("Reset Arrangement"), _("Puts the pieces back around the avatar"), _("Reset"), () => {
+                stop ();
+                stale = true;
+                ensure_sim ();
+                status_row.title = _("Ready");
+                status_row.subtitle = _("Not simulated yet");
+            });
+            var spacing = new SpinRow (_("Particle Distance"), _("In millimetres, smaller is finer and slower"), 5, 60, 1, project.garment.resolution);
+            spacing.spin_btn.value_changed.connect (() => {
+                project.garment.resolution = (int) spacing.value;
+                stale = true;
+            });
+            simg.add_row (spacing);
+            page.append (simg);
+
+            var sewing = new PreferencesGroup (_("Sewing"), _("Sew edges in the pattern window with the sewing tools."));
+            Dialogs.header_button (sewing, _("Auto Sew"), () => {
+                if (sim == null) return;
+                sim.auto_sew (project.pattern.evaluate (size));
+                project.touch ("garment");
+                canvas.selected_seam = -1;
+                canvas.queue_draw ();
+                rebuild_seam_box ();
+                view.queue_render ();
+            }, false);
+            page.append (sewing);
+            seam_box = new Box (Orientation.VERTICAL, 0);
+            page.append (seam_box);
+
+            var fit = new PreferencesGroup (_("Fit Map"));
+            string[] maps = { "material", "strain", "distance", "wireframe" };
+            string[] map_labels = { _("Fabric"), _("Tension"), _("Distance"), _("Mesh") };
+            var fit_row = new SelectionRow (_("Show"), map_labels, map_labels[0]);
+            fit_row.selected.connect ((label) => {
+                string m = "material";
+                for (int i = 0; i < maps.length; i++) if (map_labels[i] == label) m = maps[i];
+                fit_map = m;
+                if (sim != null) {
+                    sim.map = m;
+                    sim.sync ();
+                }
+                view.shading = m;
+            });
+            fit.add_row (fit_row);
+            page.append (fit);
+            return page;
+        }
+
+        private string gender () {
+            string g = project.garment.avatar_gender != "" ? project.garment.avatar_gender : project.pattern.table.gender;
+            return g == "male" ? "male" : "female";
+        }
+
+        private BodyDims dims () {
+            var d = BodyDims.from_table (project.pattern.table, size);
+            foreach (var e in project.garment.avatar.entries) d.set_field (e.key, e.value);
+            return d;
+        }
+
+        private Widget avatar_page () {
+            var page = new Box (Orientation.VERTICAL, 0);
+            var avatar = new PreferencesGroup (_("Avatar"));
+            string[] genders = { _("Female"), _("Male") };
+            var gender_row = new SelectionRow (_("Body"), genders, genders[gender () == "male" ? 1 : 0]);
+            gender_row.selected.connect ((label) => {
+                project.garment.avatar_gender = label == genders[1] ? "male" : "female";
+                project.touch ("garment");
+                body_changed ();
+            });
+            avatar.add_row (gender_row);
+            string[] sizes = {};
+            foreach (var s in project.pattern.table.sizes) sizes += s;
+            if (sizes.length == 0) sizes += size;
+            var size_row = new SelectionRow (_("Size"), sizes, size);
+            size_row.selected.connect ((s) => {
+                size = s;
+                stale = true;
+                rebuild_measures ();
+                refresh ();
+            });
+            avatar.add_row (size_row);
+            string[] pose_labels = {};
+            foreach (var id in BodyPose.ids ()) pose_labels += BodyPose.label (id);
+            var pose_row = new SelectionRow (_("Pose"), pose_labels, BodyPose.label (project.garment.pose));
+            pose_row.selected.connect ((label) => {
+                foreach (var id in BodyPose.ids ()) if (BodyPose.label (id) == label) project.garment.pose = id;
+                project.touch ("garment");
+                body_changed ();
+            });
+            avatar.add_row (pose_row);
+            page.append (avatar);
+            measure_box = new Box (Orientation.VERTICAL, 0);
+            page.append (measure_box);
+            rebuild_measures ();
+            return page;
+        }
+
+        private void rebuild_measures () {
+            Widget? c;
+            while ((c = measure_box.get_first_child ()) != null) measure_box.remove (c);
+            double unit = project.pattern.unit_mm ();
+            var g = new PreferencesGroup (_("Measurements"), _("In %s. The avatar follows the size chart until a value is changed here.").printf (project.pattern.unit));
+            Dialogs.header_button (g, _("Reset"), () => {
+                project.garment.avatar.clear ();
+                project.touch ("garment");
+                rebuild_measures ();
+                body_changed ();
+            }, false);
+            var d = dims ();
+            foreach (unowned string name in BodyDims.FIELDS) {
+                string field = name;
+                double v = d.field (field) / unit;
+                var row = new SpinRow (BodyDims.field_label (field), null, Math.floor (v * 0.5), Math.ceil (v * 1.8), unit >= 10 ? 0.5 : 5, Math.round (v * 10) / 10);
+                row.spin_btn.digits = unit >= 10 ? 1 : 0;
+                row.spin_btn.value_changed.connect (() => {
+                    project.garment.avatar[field] = row.value * unit;
+                    project.touch ("garment");
+                    body_changed ();
+                });
+                g.add_row (row);
+            }
+            measure_box.append (g);
+        }
+
+        private void body_changed () {
+            if (body_timer != 0) Source.remove (body_timer);
+            body_timer = Timeout.add (350, () => {
+                body_timer = 0;
+                ensure_body ();
+                show_scene ();
+                return Source.REMOVE;
+            });
+        }
+
+        private Widget fabric_page () {
+            var page = new Box (Orientation.VERTICAL, 0);
+            piece_box = new Box (Orientation.VERTICAL, 0);
+            page.append (piece_box);
+            fabric_list = new Box (Orientation.VERTICAL, 0);
+            page.append (fabric_list);
+            fabric_props = new Box (Orientation.VERTICAL, 0);
+            page.append (fabric_props);
+            rebuild_fabric_list ();
+            rebuild_fabric_props ();
+            return page;
+        }
+
+        private static Widget swatch (FabricPreset f) {
+            var area = new DrawingArea ();
+            area.set_size_request (26, 26);
+            area.valign = Align.CENTER;
+            area.set_draw_func ((a, cr, w, h) => {
+                cr.arc (w / 2.0, h / 2.0, double.min (w, h) / 2.0 - 1, 0, 2 * Math.PI);
+                var pix = f.image ();
+                if (pix != null) {
+                    cr.save ();
+                    cr.clip_preserve ();
+                    double k = double.max ((double) w / pix.width, (double) h / pix.height);
+                    cr.scale (k, k);
+                    Gdk.cairo_set_source_pixbuf (cr, pix, 0, 0);
+                    cr.paint ();
+                    cr.restore ();
+                } else {
+                    cr.set_source_rgb (f.color.r, f.color.g, f.color.b);
+                    cr.fill_preserve ();
+                }
+                cr.set_source_rgba (0, 0, 0, 0.25);
+                cr.set_line_width (1);
+                cr.stroke ();
+            });
+            return area;
+        }
+
+        private void rebuild_fabric_list () {
+            Widget? c;
+            while ((c = fabric_list.get_first_child ()) != null) fabric_list.remove (c);
+            var g = new PreferencesGroup (_("Fabrics"));
+            Dialogs.header_button (g, _("Add"), () => {
+                var src = project.garment.find_fabric (selected_fabric) ?? project.garment.fabrics[0];
+                var made = src.copy (project.garment.new_fabric_id (), _("Fabric %d").printf (project.garment.fabrics.size + 1));
+                project.garment.fabrics.add (made);
+                selected_fabric = made.id;
+                project.touch ("garment");
+                rebuild_fabric_list ();
+                rebuild_fabric_props ();
+                rebuild_piece_box ();
+            }, false);
+            foreach (var f in project.garment.fabrics) {
+                string id = f.id;
+                int used = 0;
+                foreach (var piece in project.pattern.pieces) if (project.garment.fabric_for (piece.id).id == id) used++;
+                var row = new ActionRow (f.name, used == 1 ? _("1 piece") : _("%d pieces").printf (used));
+                row.add_prefix (swatch (f));
+                var pick = new CheckButton ();
+                pick.valign = Align.CENTER;
+                pick.active = id == selected_fabric;
+                pick.tooltip_text = _("Edit This Fabric");
+                pick.toggled.connect (() => {
+                    if (!pick.active || selected_fabric == id) return;
+                    selected_fabric = id;
+                    rebuild_fabric_list ();
+                    rebuild_fabric_props ();
+                });
+                row.add_suffix (pick);
+                g.add_row (row);
+            }
+            fabric_list.append (g);
+        }
+
+        private delegate void Setter (FabricPreset f, double v);
+
+        private void number (PreferencesGroup g, FabricPreset f, string title, string? subtitle, double lo, double hi, double step, int digits, double value, bool physical, owned Setter set) {
+            var row = new SpinRow (title, subtitle, lo, hi, step, value);
+            row.spin_btn.digits = digits;
+            row.spin_btn.value_changed.connect (() => {
+                set (f, row.value);
+                fabric_changed (f, physical);
+            });
+            g.add_row (row);
+        }
+
+        private void rebuild_fabric_props () {
+            Widget? c;
+            while ((c = fabric_props.get_first_child ()) != null) fabric_props.remove (c);
+            var f = project.garment.find_fabric (selected_fabric);
+            if (f == null) return;
+            var g = new PreferencesGroup (f.name);
+            var name_row = new EntryRow (_("Name"));
+            name_row.text = f.name;
+            name_row.entry_activated.connect (() => {
+                if (name_row.text.strip () == "") return;
+                f.name = name_row.text.strip ();
+                project.touch ("garment");
+                rebuild_fabric_list ();
+                rebuild_fabric_props ();
+                rebuild_piece_box ();
+            });
+            g.add_row (name_row);
+            string[] labels = {};
+            foreach (var p in FabricPreset.all ()) labels += p.name;
+            var type_row = new SelectionRow (_("Type"), labels, FabricPreset.find (f.preset).name);
+            type_row.selected.connect ((label) => {
+                foreach (var p in FabricPreset.all ()) if (p.name == label) f.take_physics (p);
+                fabric_changed (f, true);
+                rebuild_fabric_props ();
+            });
+            g.add_row (type_row);
+            var color_row = new ActionRow (_("Colour"));
+            var picker = new ColorPickerButton (Gdk.RGBA () { red = (float) f.color.r, green = (float) f.color.g, blue = (float) f.color.b, alpha = 1 });
+            picker.valign = Align.CENTER;
+            picker.color_changed.connect ((col) => {
+                f.color = Rgba (col.red, col.green, col.blue, 1);
+                fabric_changed (f, false);
+                rebuild_fabric_list ();
+            });
+            color_row.add_suffix (picker);
+            g.add_row (color_row);
+            var tex_row = new ActionRow (_("Print"), f.texture != "" ? Path.get_basename (f.texture) : _("No image"));
+            var choose = new Button.with_label (_("Choose"));
+            choose.valign = Align.CENTER;
+            choose.clicked.connect (() => {
+                Dialogs.open.begin (window (), _("Choose an Image"), _("Images"), { "png", "jpg", "jpeg", "webp" }, (o, r) => {
+                    var file = Dialogs.open.end (r);
+                    if (file == null || file.get_path () == null) return;
+                    f.texture = file.get_path ();
+                    fabric_changed (f, false);
+                    rebuild_fabric_list ();
+                    rebuild_fabric_props ();
+                });
+            });
+            tex_row.add_suffix (choose);
+            if (f.texture != "") {
+                var clear = new Button.with_label (_("Remove"));
+                clear.valign = Align.CENTER;
+                clear.clicked.connect (() => {
+                    f.texture = "";
+                    fabric_changed (f, false);
+                    rebuild_fabric_list ();
+                    rebuild_fabric_props ();
+                });
+                tex_row.add_suffix (clear);
+            }
+            g.add_row (tex_row);
+            number (g, f, _("Print Size"), _("Width of one repeat in millimetres"), 5, 2000, 5, 0, f.texture_size, false, (x, v) => x.texture_size = v);
+            fabric_props.append (g);
+
+            var p = new PreferencesGroup (_("Physical Properties"));
+            number (p, f, _("Stretch Weft"), _("Resistance across the grain"), 50, 60000, 100, 0, f.stretch_weft, true, (x, v) => x.stretch_weft = v);
+            number (p, f, _("Stretch Warp"), _("Resistance along the grain"), 50, 60000, 100, 0, f.stretch_warp, true, (x, v) => x.stretch_warp = v);
+            number (p, f, _("Shear"), _("Resistance on the bias"), 20, 30000, 20, 0, f.shear, true, (x, v) => x.shear = v);
+            number (p, f, _("Bending Weft"), _("Stiffness when folding across the grain"), 0.2, 2000, 0.5, 1, f.bend_weft, true, (x, v) => x.bend_weft = v);
+            number (p, f, _("Bending Warp"), _("Stiffness when folding along the grain"), 0.2, 2000, 0.5, 1, f.bend_warp, true, (x, v) => x.bend_warp = v);
+            number (p, f, _("Weight"), _("Grams per square metre"), 20, 1500, 5, 0, f.density, true, (x, v) => x.density = v);
+            number (p, f, _("Thickness"), _("In millimetres"), 0.05, 10, 0.05, 2, f.thickness, true, (x, v) => x.thickness = v);
+            number (p, f, _("Friction"), null, 0, 1, 0.05, 2, f.friction, true, (x, v) => x.friction = v);
+            number (p, f, _("Shrinkage Weft"), _("Percent of the cut width"), 50, 150, 1, 0, f.shrink_weft * 100, true, (x, v) => x.shrink_weft = v / 100);
+            number (p, f, _("Shrinkage Warp"), _("Percent of the cut length"), 50, 150, 1, 0, f.shrink_warp * 100, true, (x, v) => x.shrink_warp = v / 100);
+            fabric_props.append (p);
+
+            var look = new PreferencesGroup (_("Surface"));
+            number (look, f, _("Roughness"), null, 0.05, 1, 0.05, 2, f.roughness, false, (x, v) => x.roughness = v);
+            number (look, f, _("Sheen"), null, 0, 2, 0.05, 2, f.sheen, false, (x, v) => x.sheen = v);
+            number (look, f, _("Weave Depth"), null, 0, 1, 0.05, 2, f.weave, false, (x, v) => x.weave = v);
+            number (look, f, _("Threads"), _("Per millimetre"), 0.3, 6, 0.1, 1, f.weave_scale, false, (x, v) => x.weave_scale = v);
+            if (project.garment.fabrics.size > 1) {
+                Dialogs.button_row (look, _("Remove the Fabric"), _("Its pieces go back to the first fabric"), _("Remove"), () => {
+                    project.garment.fabrics.remove (f);
+                    foreach (var key in project.garment.piece_fabrics.keys.to_array ()) if (project.garment.piece_fabrics[key] == f.id) project.garment.piece_fabrics.unset (key);
+                    selected_fabric = project.garment.fabrics[0].id;
+                    project.touch ("garment");
+                    apply_fabrics ();
+                    rebuild_fabric_list ();
+                    rebuild_fabric_props ();
+                    rebuild_piece_box ();
+                });
+            }
+            fabric_props.append (look);
+        }
+
+        private void fabric_changed (FabricPreset f, bool physical) {
+            project.touch ("garment");
+            if (sim != null) {
+                foreach (var p in sim.pieces) {
+                    if (project.garment.fabric_for (p.piece_id) != f) continue;
+                    if (physical) sim.set_fabric (p, f);
+                    else {
+                        p.fabric = f;
+                        sim.apply_material (p);
+                    }
+                }
+            }
+            canvas.queue_draw ();
+            view.queue_render ();
+        }
+
+        private void rebuild_piece_box () {
+            Widget? c;
+            while ((c = piece_box.get_first_child ()) != null) piece_box.remove (c);
+            var piece = project.pattern.find_piece (canvas.selected_piece);
+            var g = new PreferencesGroup (piece != null ? piece.name : _("Pieces"), piece != null ? null : _("Click a piece in the pattern window to change only that one."));
+            string[] names = {};
+            foreach (var f in project.garment.fabrics) names += f.name;
+            foreach (var p in project.pattern.pieces) {
+                if (piece != null && p != piece) continue;
+                string id = p.id;
+                var row = new SelectionRow (piece != null ? _("Fabric") : p.name, names, project.garment.fabric_for (id).name);
+                row.selected.connect ((label) => {
+                    foreach (var f in project.garment.fabrics) if (f.name == label) project.garment.piece_fabrics[id] = f.id;
+                    project.touch ("garment");
+                    apply_fabrics ();
+                    rebuild_fabric_list ();
+                });
+                g.add_row (row);
+            }
+            piece_box.append (g);
+        }
+
+        private void rebuild_seam_box () {
+            Widget? c;
+            while ((c = seam_box.get_first_child ()) != null) seam_box.remove (c);
+            int index = canvas.selected_seam;
+            if (index < 0 || index >= project.garment.seams.size) return;
+            var g = new PreferencesGroup (canvas.seam_title (index));
+            double unit = project.pattern.unit_mm ();
+            var lengths = new ActionRow (_("Lengths"), "%s and %s %s".printf (Singularity.Vector.PathData.fmt (canvas.seam_length (index, false) / unit, 1), Singularity.Vector.PathData.fmt (canvas.seam_length (index, true) / unit, 1), project.pattern.unit));
+            g.add_row (lengths);
+            Dialogs.button_row (g, _("Direction"), _("Swaps which ends are sewn together"), _("Reverse"), () => canvas.reverse_selected_seam ());
+            Dialogs.button_row (g, _("Remove the Seam"), null, _("Remove"), () => canvas.delete_selected_seam ());
+            seam_box.append (g);
+            pages.visible_child_name = "simulation";
         }
 
         private bool view_key (uint keyval) {
@@ -208,77 +521,33 @@ namespace Singularity.Apps.Atelier {
             return true;
         }
 
-        private void rebuild_seam_box () {
-            Widget? c;
-            while ((c = seam_box.get_first_child ()) != null) seam_box.remove (c);
-            int index = canvas.selected_seam;
-            if (index < 0 || index >= project.garment.seams.size) return;
-            var g = new PreferencesGroup (canvas.seam_title (index));
-            double unit = project.pattern.unit_mm ();
-            var lengths = new ActionRow (_("Lengths"), "%s and %s %s".printf (Singularity.Vector.PathData.fmt (canvas.seam_length (index, false) / unit, 1), Singularity.Vector.PathData.fmt (canvas.seam_length (index, true) / unit, 1), project.pattern.unit));
-            g.add_row (lengths);
-            Dialogs.button_row (g, _("Direction"), _("Swaps which ends are sewn together"), _("Reverse"), () => canvas.reverse_selected_seam ());
-            Dialogs.button_row (g, _("Remove the Seam"), null, _("Remove"), () => canvas.delete_selected_seam ());
-            seam_box.append (g);
-        }
-
-        private static FabricPreset preset_by_name (string label) {
-            foreach (var f in FabricPreset.all ()) if (f.name == label) return f;
-            return FabricPreset.find (null);
-        }
-
-        private FabricPreset fabric_for (string piece_id) {
-            return FabricPreset.find (project.garment.piece_fabrics.has_key (piece_id) ? project.garment.piece_fabrics[piece_id] : project.garment.fabric_preset);
-        }
-
         private void apply_fabrics () {
-            if (sim == null) return;
-            foreach (var p in sim.pieces) sim.set_fabric (p, fabric_for (p.piece_id));
+            if (sim != null) foreach (var p in sim.pieces) sim.set_fabric (p, project.garment.fabric_for (p.piece_id));
+            canvas.queue_draw ();
             view.queue_render ();
         }
 
-        private void rebuild_fabrics () {
-            Widget? c;
-            while ((c = fabric_box.get_first_child ()) != null) fabric_box.remove (c);
-            if (project.pattern.pieces.size == 0) return;
-            var g = new PreferencesGroup (_("Fabric per Piece"));
-            string[] labels = {};
-            foreach (var f in FabricPreset.all ()) labels += f.name;
-            foreach (var piece in project.pattern.pieces) {
-                string id = piece.id;
-                var row = new SelectionRow (piece.name, labels, fabric_for (id).name);
-                row.selected.connect ((label) => {
-                    project.garment.piece_fabrics[id] = preset_by_name (label).id;
-                    project.touch ("garment");
-                    apply_fabrics ();
-                });
-                g.add_row (row);
-            }
-            fabric_box.append (g);
-        }
-
         private void ensure_body () {
-            var table = project.pattern.table;
-            var dims = BodyDims.from_table (table, size);
-            string gender = table.gender == "male" ? "male" : "female";
-            string key = "%s %.0f %.0f %.0f %.0f %.0f %.0f %.0f %.0f %.0f %.0f %.0f %.0f %.0f %.0f".printf (gender, dims.height, dims.bust, dims.waist, dims.hip, dims.neck,
-                dims.across_back, dims.arm, dims.upper_arm, dims.wrist, dims.inseam, dims.thigh, dims.knee, dims.ankle, dims.back_waist);
+            var d = dims ();
+            string key = gender ();
+            foreach (unowned string name in BodyDims.FIELDS) key += " %.0f".printf (d.field (name));
             string full = key + " " + project.garment.pose;
             if (body != null && body_key == full) return;
             if (fits == null) fits = new HashTable<string, BodyShape> (str_hash, str_equal);
             BodyShape? shape = fits[key];
             if (shape == null) {
-                shape = BodyFit.fit (dims, gender);
+                shape = BodyFit.fit (d, gender ());
                 fits[key] = shape;
             }
             body = Body.build (shape, BodyPose.named (project.garment.pose));
             body_key = full;
-            if (sim != null) stale = true;
+            if (sim != null) sim.set_body (body);
         }
 
         private void ensure_sim () {
             ensure_body ();
             if (sim != null && !stale) return;
+            if (running != 0) stop ();
             stale = false;
             sim = null;
             var result = project.pattern.evaluate (size);
@@ -292,8 +561,9 @@ namespace Singularity.Apps.Atelier {
         }
 
         public void refresh () {
-            if (running != 0) stop ();
-            rebuild_fabrics ();
+            project.garment.ensure_fabrics ();
+            rebuild_piece_box ();
+            rebuild_fabric_list ();
             ensure_sim ();
             show_scene ();
         }
@@ -385,6 +655,17 @@ namespace Singularity.Apps.Atelier {
             view.queue_render ();
         }
 
+        public void fabrics_updated () {
+            apply_fabrics ();
+            rebuild_fabric_list ();
+            rebuild_fabric_props ();
+            rebuild_piece_box ();
+        }
+
+        public void show_page (string name) {
+            pages.visible_child_name = name;
+        }
+
         private ClothPiece? piece_of (Scene.Mesh? mesh) {
             if (sim == null || mesh == null) return null;
             foreach (var p in sim.pieces) if (p.mesh == mesh) return p;
@@ -392,10 +673,19 @@ namespace Singularity.Apps.Atelier {
         }
 
         private bool on_press (double x, double y, Gdk.ModifierType state) {
-            if (!get_mapped () || sim == null || running == 0) return false;
+            if (!get_mapped () || sim == null) return false;
             Scene.Hit hit;
             var piece = piece_of (view.native_at (x, y, out hit));
             if (piece == null) return false;
+            if (running == 0) {
+                if (canvas.selected_piece != piece.piece_id) {
+                    canvas.selected_piece = piece.piece_id;
+                    canvas.selected_seam = -1;
+                    canvas.selection_changed ();
+                    canvas.queue_draw ();
+                }
+                return false;
+            }
             grabbing = true;
             grab_point = hit.point;
             sim.grab (piece, hit.nearest_vertex (), Vec3 (hit.point.x, hit.point.y, hit.point.z), 70);

@@ -312,6 +312,23 @@ namespace Singularity.Apps.Atelier {
                 case "garment":
                     win.show_workspace ("3d");
                     return 800;
+                case "gpage":
+                    win.garment_panel.show_page (a[1]);
+                    return 400;
+                case "fabric": {
+                    var g = win.project.garment;
+                    g.ensure_fabrics ();
+                    var f = g.fabrics[0];
+                    if (a[1] == "new") {
+                        f = FabricPreset.find (a[2]).copy (g.new_fabric_id (), FabricPreset.find (a[2]).name);
+                        g.fabrics.add (f);
+                    } else if (a[1] == "color") f.color = Rgba.parse (a[2]);
+                    else if (a[1] == "print") f.texture = a[2];
+                    else if (a[1] == "assign") g.piece_fabrics[win.project.pattern.pieces[int.parse (a[2])].id] = g.fabrics[int.parse (a[3])].id;
+                    else f.take_physics (FabricPreset.find (a[1]));
+                    win.garment_panel.fabrics_updated ();
+                    return 400;
+                }
                 case "gtool":
                     win.garment_canvas.choose_tool (a[1]);
                     return 200;

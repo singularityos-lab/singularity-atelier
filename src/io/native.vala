@@ -1248,6 +1248,29 @@ namespace Singularity.Apps.Atelier {
             b.set_member_name ("gender").add_string_value (g.avatar_gender);
             b.set_member_name ("resolution").add_int_value (g.resolution);
             b.set_member_name ("environment").add_string_value (g.environment);
+            b.set_member_name ("avatar").begin_object ();
+            foreach (var ak in sorted (g.avatar.keys)) b.set_member_name (ak).add_double_value (g.avatar[ak]);
+            b.end_object ();
+            b.set_member_name ("fabrics").begin_array ();
+            foreach (var f in g.fabrics) {
+                b.begin_object ();
+                b.set_member_name ("id").add_string_value (f.id);
+                b.set_member_name ("name").add_string_value (f.name);
+                b.set_member_name ("preset").add_string_value (f.preset);
+                b.set_member_name ("color").add_string_value (f.color.to_hex ());
+                b.set_member_name ("texture").add_string_value (f.texture);
+                b.set_member_name ("texture_size").add_double_value (f.texture_size);
+                b.set_member_name ("physics").begin_array ();
+                double[] values = { f.stretch_weft, f.stretch_warp, f.shear, f.bend_weft, f.bend_warp, f.density, f.friction, f.thickness, f.damping, f.shrink_weft, f.shrink_warp };
+                foreach (double v in values) b.add_double_value (v);
+                b.end_array ();
+                b.set_member_name ("surface").begin_array ();
+                double[] look = { f.roughness, f.metallic, f.sheen, f.weave, f.weave_scale };
+                foreach (double v in look) b.add_double_value (v);
+                b.end_array ();
+                b.end_object ();
+            }
+            b.end_array ();
             b.set_member_name ("piece_fabrics").begin_object ();
             foreach (var ek in sorted (g.piece_fabrics.keys)) b.set_member_name (ek).add_string_value (g.piece_fabrics[ek]);
             b.end_object ();
@@ -1274,9 +1297,45 @@ namespace Singularity.Apps.Atelier {
             var g = new GarmentSettings ();
             g.fabric_preset = s (o, "fabric", "cotton");
             g.pose = s (o, "pose", "a-pose");
-            g.avatar_gender = s (o, "gender", "female");
+            g.avatar_gender = s (o, "gender", "");
             g.resolution = (int) n (o, "resolution", 18);
             g.environment = s (o, "environment", "studio");
+            var av = obj (o, "avatar");
+            if (av != null) foreach (var k in av.get_members ()) g.avatar[k] = av.get_double_member (k);
+            var fa = arr (o, "fabrics");
+            if (fa != null) {
+                foreach (var e in fa.get_elements ()) {
+                    var fo = e.get_object ();
+                    var f = FabricPreset.find (s (fo, "preset", "cotton")).copy (s (fo, "id"), s (fo, "name"));
+                    f.preset = s (fo, "preset", "cotton");
+                    f.color = Rgba.parse (s (fo, "color", "#dddddd"));
+                    f.texture = s (fo, "texture");
+                    f.texture_size = n (fo, "texture_size", 100);
+                    var ph = arr (fo, "physics");
+                    if (ph != null && ph.get_length () >= 11) {
+                        f.stretch_weft = ph.get_double_element (0);
+                        f.stretch_warp = ph.get_double_element (1);
+                        f.shear = ph.get_double_element (2);
+                        f.bend_weft = ph.get_double_element (3);
+                        f.bend_warp = ph.get_double_element (4);
+                        f.density = ph.get_double_element (5);
+                        f.friction = ph.get_double_element (6);
+                        f.thickness = ph.get_double_element (7);
+                        f.damping = ph.get_double_element (8);
+                        f.shrink_weft = ph.get_double_element (9);
+                        f.shrink_warp = ph.get_double_element (10);
+                    }
+                    var su = arr (fo, "surface");
+                    if (su != null && su.get_length () >= 5) {
+                        f.roughness = su.get_double_element (0);
+                        f.metallic = su.get_double_element (1);
+                        f.sheen = su.get_double_element (2);
+                        f.weave = su.get_double_element (3);
+                        f.weave_scale = su.get_double_element (4);
+                    }
+                    g.fabrics.add (f);
+                }
+            }
             var pf = obj (o, "piece_fabrics");
             if (pf != null) foreach (var k in pf.get_members ()) g.piece_fabrics[k] = pf.get_string_member (k);
             var sa = arr (o, "seams");

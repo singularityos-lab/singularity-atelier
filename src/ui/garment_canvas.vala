@@ -336,7 +336,7 @@ namespace Singularity.Apps.Atelier {
             double ink = dark ? 0.86 : 0.18;
             foreach (var g in result.pieces) {
                 if (g.seam.length < 3) continue;
-                var f = FabricPreset.find (project.garment.piece_fabrics.has_key (g.piece.id) ? project.garment.piece_fabrics[g.piece.id] : project.garment.fabric_preset);
+                var f = project.garment.fabric_for (g.piece.id);
                 var pts = outline (g);
                 var o = offset_of (g.piece.id);
                 Point fa, fb;

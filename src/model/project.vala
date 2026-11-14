@@ -4,8 +4,46 @@ namespace Singularity.Apps.Atelier {
         public string fabric_preset = "cotton";
         public Gee.HashMap<string, string> piece_fabrics = new Gee.HashMap<string, string> ();
         public Gee.ArrayList<SeamPair> seams = new Gee.ArrayList<SeamPair> ();
+        public Gee.ArrayList<FabricPreset> fabrics = new Gee.ArrayList<FabricPreset> ();
+        public Gee.HashMap<string, double?> avatar = new Gee.HashMap<string, double?> ();
         public string pose = "a-pose";
-        public string avatar_gender = "female";
+        public string avatar_gender = "";
+
+        public void ensure_fabrics () {
+            if (fabrics.size == 0) {
+                var base_preset = FabricPreset.find (fabric_preset);
+                var first = base_preset.copy ("fabric1", base_preset.name);
+                fabrics.add (first);
+            }
+            foreach (var key in piece_fabrics.keys.to_array ()) {
+                string id = piece_fabrics[key];
+                if (find_fabric (id) != null) continue;
+                var preset = FabricPreset.find (id);
+                var made = preset.copy (new_fabric_id (), preset.name);
+                fabrics.add (made);
+                piece_fabrics[key] = made.id;
+            }
+        }
+
+        public string new_fabric_id () {
+            int n = fabrics.size + 1;
+            while (find_fabric ("fabric%d".printf (n)) != null) n++;
+            return "fabric%d".printf (n);
+        }
+
+        public FabricPreset? find_fabric (string id) {
+            foreach (var f in fabrics) if (f.id == id) return f;
+            return null;
+        }
+
+        public FabricPreset fabric_for (string piece_id) {
+            ensure_fabrics ();
+            if (piece_fabrics.has_key (piece_id)) {
+                var f = find_fabric (piece_fabrics[piece_id]);
+                if (f != null) return f;
+            }
+            return fabrics[0];
+        }
         public int resolution = 18;
         public string environment = "studio";
     }

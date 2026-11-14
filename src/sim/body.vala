@@ -50,6 +50,66 @@ namespace Singularity.Apps.Atelier {
             return d;
         }
 
+        public const string[] FIELDS = { "height", "bust", "waist", "hip", "neck", "across_back", "arm", "upper_arm", "wrist", "inseam", "thigh", "knee", "ankle", "back_waist" };
+
+        public double field (string name) {
+            switch (name) {
+                case "height": return height;
+                case "bust": return bust;
+                case "waist": return waist;
+                case "hip": return hip;
+                case "neck": return neck;
+                case "across_back": return across_back;
+                case "arm": return arm;
+                case "upper_arm": return upper_arm;
+                case "wrist": return wrist;
+                case "inseam": return inseam;
+                case "thigh": return thigh;
+                case "knee": return knee;
+                case "ankle": return ankle;
+                case "back_waist": return back_waist;
+                default: return 0;
+            }
+        }
+
+        public void set_field (string name, double v) {
+            switch (name) {
+                case "height": height = v; break;
+                case "bust": bust = v; break;
+                case "waist": waist = v; break;
+                case "hip": hip = v; break;
+                case "neck": neck = v; break;
+                case "across_back": across_back = v; break;
+                case "arm": arm = v; break;
+                case "upper_arm": upper_arm = v; break;
+                case "wrist": wrist = v; break;
+                case "inseam": inseam = v; break;
+                case "thigh": thigh = v; break;
+                case "knee": knee = v; break;
+                case "ankle": ankle = v; break;
+                case "back_waist": back_waist = v; break;
+            }
+        }
+
+        public static string field_label (string name) {
+            switch (name) {
+                case "height": return _("Height");
+                case "bust": return _("Bust");
+                case "waist": return _("Waist");
+                case "hip": return _("Hips");
+                case "neck": return _("Neck");
+                case "across_back": return _("Across Back");
+                case "arm": return _("Arm Length");
+                case "upper_arm": return _("Upper Arm");
+                case "wrist": return _("Wrist");
+                case "inseam": return _("Inseam");
+                case "thigh": return _("Thigh");
+                case "knee": return _("Knee");
+                case "ankle": return _("Ankle");
+                default: return _("Back Length");
+            }
+        }
+
         private static double get (MeasurementTable t, string size, string name, double fallback) {
             double v;
             if (t.lookup (name, size, out v) && v > 0) return v;

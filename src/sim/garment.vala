@@ -162,7 +162,7 @@ namespace Singularity.Apps.Atelier {
         }
 
         private FabricPreset fabric_of (Piece p) {
-            return FabricPreset.find (settings.piece_fabrics.has_key (p.id) ? settings.piece_fabrics[p.id] : settings.fabric_preset);
+            return settings.fabric_for (p.id);
         }
 
         private void build (PatternResult result) {
@@ -408,6 +408,9 @@ namespace Singularity.Apps.Atelier {
             mat.sheen = f.sheen;
             mat.weave = f.weave;
             mat.weave_scale = f.weave_scale;
+            mat.texture = f.image ();
+            mat.texture_size = f.texture_size;
+            if (mat.texture != null) mat.color = Gdk.RGBA () { red = 1, green = 1, blue = 1, alpha = 1 };
             mat.double_sided = true;
         }
 
