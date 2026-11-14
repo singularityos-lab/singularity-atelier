@@ -1260,6 +1260,10 @@ namespace Singularity.Apps.Atelier {
                 b.add_int_value (sp.edge_b);
                 b.add_boolean_value (sp.reverse_b);
                 b.add_double_value (sp.ease);
+                b.add_double_value (sp.a0);
+                b.add_double_value (sp.a1);
+                b.add_double_value (sp.b0);
+                b.add_double_value (sp.b1);
                 b.end_array ();
             }
             b.end_array ();
@@ -1282,6 +1286,12 @@ namespace Singularity.Apps.Atelier {
                     var sp = new SeamPair (a.get_string_element (0), (int) a.get_int_element (1), a.get_string_element (2), (int) a.get_int_element (3));
                     sp.reverse_b = a.get_boolean_element (4);
                     sp.ease = a.get_double_element (5);
+                    if (a.get_length () >= 10) {
+                        sp.a0 = a.get_double_element (6);
+                        sp.a1 = a.get_double_element (7);
+                        sp.b0 = a.get_double_element (8);
+                        sp.b1 = a.get_double_element (9);
+                    }
                     g.seams.add (sp);
                 }
             }

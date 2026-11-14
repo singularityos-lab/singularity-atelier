@@ -17,6 +17,10 @@ namespace Singularity.Apps.Atelier {
         public int edge_b;
         public bool reverse_b = true;
         public double ease;
+        public double a0;
+        public double a1 = 1;
+        public double b0;
+        public double b1 = 1;
 
         public SeamPair (string piece_a, int edge_a, string piece_b, int edge_b) {
             this.piece_a = piece_a;

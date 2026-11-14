@@ -42,12 +42,12 @@ namespace Singularity.Apps.Atelier {
 
         public void tshirt_pattern (Pattern p) {
             p.increments.add (new Increment ("ease", "4"));
-            p.increments.add (new Increment ("armhole", "bust_circ / 8 + 8"));
+            p.increments.add (new Increment ("armhole", "bust_circ / 8 + 11.5"));
             p.increments.add (new Increment ("length", "back_waist_length + waist_to_hip + 4"));
 
             var a = base_pt (p, "A", "0", "0");
-            var c = end_line (p, "C", a, "neck_circ / 6 + 2", "270");
-            var d = end_line (p, "D", a, "neck_circ / 6", "0");
+            var c = end_line (p, "C", a, "neck_circ / 6 + 4", "270");
+            var d = end_line (p, "D", a, "neck_circ / 6 + 2", "0");
             var e = end_line (p, "E", d, "shoulder_length + 1", "340");
             var f = end_line (p, "F", a, "#armhole", "270");
             var g = end_line (p, "G", f, "bust_circ / 4 + #ease / 4", "0");
@@ -67,8 +67,8 @@ namespace Singularity.Apps.Atelier {
             front.placement = "front";
 
             var ba = base_pt (p, "A1", "40", "0");
-            var bc = end_line (p, "C1", ba, "2", "270");
-            var bd = end_line (p, "D1", ba, "neck_circ / 6", "0");
+            var bc = end_line (p, "C1", ba, "2.5", "270");
+            var bd = end_line (p, "D1", ba, "neck_circ / 6 + 2", "0");
             var be = end_line (p, "E1", bd, "shoulder_length + 1", "340");
             var bf = end_line (p, "F1", ba, "#armhole", "270");
             var bg = end_line (p, "G1", bf, "bust_circ / 4 + #ease / 4", "0");
@@ -85,7 +85,7 @@ namespace Singularity.Apps.Atelier {
             back.nodes[5].sa_after = "2.5";
             back.placement = "back";
 
-            p.increments.add (new Increment ("cap", "#armhole * 0.55"));
+            p.increments.add (new Increment ("cap", "#armhole * 0.46"));
             p.increments.add (new Increment ("bicep", "upper_arm_circ + 5"));
             var t = base_pt (p, "T", "80", "0");
             var lb = offset (p, "L", t, "-#bicep / 2", "#cap");

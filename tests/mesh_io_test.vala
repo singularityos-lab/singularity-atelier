@@ -9,7 +9,9 @@ Gee.ArrayList<Mesh> sample () {
     var cube = pm.subdivided ();
     cube.name = "cube";
     list.add (cube);
-    var avatar = Avatar.build (MeasurementTable.standard_women (), "38", "a-pose");
+    var table = MeasurementTable.standard_women ();
+    var avatar = Mesh.from_scene (Body.build (BodyFit.fit (BodyDims.from_table (table, "38"), "female"), BodyPose.named ("a-pose")).mesh);
+    avatar.name = "avatar";
     list.add (avatar);
     var rev = Surfaces.revolve ({ 0, 0, 40, 0, 45, 50, 0, 90 }, 16);
     rev.color = Rgba (0.2, 0.4, 0.6, 1);

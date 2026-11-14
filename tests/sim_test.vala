@@ -2,96 +2,161 @@ using Singularity.Vector;
 using Singularity.Apps.Atelier;
 using Singularity.Apps.Atelier.Test;
 
-void test_avatar () {
+Body standard_body (string pose = "a-pose") {
     var table = MeasurementTable.standard_women ();
-    foreach (var size in new string[] { "34", "38", "46" }) {
-        var model = Avatar.model (table, size, "a-pose");
-        double bust, height;
-        try {
-            bust = table.value_mm ("bust_circ", size);
-            height = table.value_mm ("height", size);
-        } catch (ExprError e) {
-            check (false, e.message);
-            return;
-        }
-        var girth = Mesh.hull_perimeter_xz (model.torso_mesh.slice_y (model.dims.y_bust ()));
-        check ((girth - bust).abs () / bust < 0.04, "bust girth %s: %f vs %f".printf (size, girth, bust));
-        var waist = Mesh.hull_perimeter_xz (model.torso_mesh.slice_y (model.dims.y_waist ()));
-        check ((waist - model.dims.waist).abs () / model.dims.waist < 0.04, "waist girth %s: %f".printf (size, waist));
-        Vec3 min, max;
-        model.mesh.bounds (out min, out max);
-        check (near (max.y - min.y, height, height * 0.02), "avatar height %s: %f vs %f".printf (size, max.y - min.y, height));
-        check (model.mesh.triangle_count () > 2000, "avatar has a real mesh");
-        var col = new AvatarCollider (model);
-        Vec3 n;
-        check (col.distance (Vec3 (0, model.dims.y_waist (), 0), out n) < 0, "waist center is inside");
-        check (col.distance (Vec3 (0, model.dims.y_waist (), 600), out n) > 300, "point in front is outside");
-        double d = col.distance (Vec3 (0, model.dims.y_bust (), 400), out n);
-        check (n.z > 0.9, "normal at the front points forward");
-    }
-    var tpose = Avatar.model (table, "38", "t-pose");
-    Vec3 tmin, tmax;
-    tpose.mesh.bounds (out tmin, out tmax);
-    var apose = Avatar.model (table, "38", "a-pose");
-    Vec3 amin, amax;
-    apose.mesh.bounds (out amin, out amax);
-    check (tmax.x - tmin.x > amax.x - amin.x + 300, "t-pose is wider than a-pose");
+    var dims = BodyDims.from_table (table, "38");
+    return Body.build (BodyFit.fit (dims, "female"), BodyPose.named (pose));
+}
+
+void test_body () {
+    check (BodyData.get_default ().valid (), "avatar data loads");
+    var table = MeasurementTable.standard_women ();
+    var dims = BodyDims.from_table (table, "38");
+    var t0 = get_monotonic_time ();
+    var shape = BodyFit.fit (dims, "female");
+    double secs = (get_monotonic_time () - t0) / 1e6;
+    var body = Body.build (shape, BodyPose.named ("a-pose"));
+    var m = body.measures;
+    check ((m.height - dims.height).abs () < 3, "height %.0f wants %.0f".printf (m.height, dims.height));
+    check ((m.bust - dims.bust).abs () < 15, "bust %.0f wants %.0f".printf (m.bust, dims.bust));
+    check ((m.waist - dims.waist).abs () < 15, "waist %.0f wants %.0f".printf (m.waist, dims.waist));
+    check ((m.hip - dims.hip).abs () < 15, "hip %.0f wants %.0f".printf (m.hip, dims.hip));
+    check ((m.inseam - dims.inseam).abs () < 30, "inseam %.0f wants %.0f".printf (m.inseam, dims.inseam));
+    check ((m.arm - dims.arm).abs () < 15, "arm %.0f wants %.0f".printf (m.arm, dims.arm));
+    check (m.y_bust > m.y_waist && m.y_waist > m.y_hip && m.y_hip > m.y_crotch, "landmarks are ordered");
+    check (body.mesh.vertex_count > 10000 && body.mesh.triangle_count > 20000, "mesh has %d vertices".printf (body.mesh.vertex_count));
+    check (secs < 6, "fit takes %.2f s".printf (secs));
+    Singularity.Scene.Vec3 lo, hi;
+    body.mesh.bounds (out lo, out hi);
+    check (lo.y.abs () < 1, "feet on the floor %.2f".printf (lo.y));
+    check ((lo.x + hi.x).abs () < 6, "body is centred %.1f".printf (lo.x + hi.x));
+    var wl = body.joint ("wrist.L"), wr = body.joint ("wrist.R");
+    check ((wl.x + wr.x).abs () < 3 && (wl.y - wr.y).abs () < 3, "arms are symmetric");
+    var tp = Body.build (shape, BodyPose.named ("t-pose"));
+    check (tp.joint ("wrist.L").y > wl.y + 150, "t-pose raises the wrists");
+    var relaxed = Body.build (shape, BodyPose.named ("relaxed"));
+    check (relaxed.joint ("wrist.L").x < wl.x - 80, "relaxed pose lowers the arms");
+    var men = MeasurementTable.standard_men ();
+    var md = BodyDims.from_table (men, men.base_size);
+    var man = Body.build (BodyFit.fit (md, "male"), BodyPose.named ("a-pose"));
+    check ((man.measures.height - md.height).abs () < 3, "male height %.0f wants %.0f".printf (man.measures.height, md.height));
+    check ((man.measures.bust - md.bust).abs () < 20, "male chest %.0f wants %.0f".printf (man.measures.bust, md.bust));
+    check ((man.measures.waist - md.waist).abs () < 20, "male waist %.0f wants %.0f".printf (man.measures.waist, md.waist));
 }
 
 void test_fabrics () {
-    check (FabricPreset.all ().size >= 6, "presets");
-    foreach (var id in new string[] { "jersey", "cotton", "denim", "leather", "silk", "wool" }) check (FabricPreset.find (id).id == id, "preset " + id);
-    check (FabricPreset.find ("denim").bend_compliance < FabricPreset.find ("silk").bend_compliance, "denim is stiffer than silk");
+    check (FabricPreset.all ().size >= 6, "fabric presets");
+    var denim = FabricPreset.find ("denim");
+    var silk = FabricPreset.find ("silk");
+    check (denim.bend_weft > silk.bend_weft * 10, "denim is much stiffer than silk");
+    check (FabricPreset.find ("nope").id == "cotton", "unknown preset falls back");
+}
+
+void test_mesher () {
+    double[] ring = {};
+    for (int i = 0; i < 10; i++) { ring += i * 20; ring += 0; }
+    for (int i = 0; i < 15; i++) { ring += 200; ring += i * 20; }
+    for (int i = 0; i < 10; i++) { ring += 200 - i * 20; ring += 300; }
+    for (int i = 0; i < 15; i++) { ring += 0; ring += 300 - i * 20; }
+    double* pts;
+    int* tris;
+    int np, nt;
+    AtCore.triangulate (ring, ring.length / 2, null, 0, 20, out pts, out np, out tris, out nt);
+    check (nt > 200, "rectangle gives %d triangles".printf (nt));
+    double area = 0;
+    bool inside = true;
+    var used = new bool[np];
+    for (int t = 0; t < nt; t++) {
+        int a = tris[t * 3], b = tris[t * 3 + 1], c = tris[t * 3 + 2];
+        used[a] = used[b] = used[c] = true;
+        area += ((pts[b * 2] - pts[a * 2]) * (pts[c * 2 + 1] - pts[a * 2 + 1]) - (pts[b * 2 + 1] - pts[a * 2 + 1]) * (pts[c * 2] - pts[a * 2])).abs () / 2;
+    }
+    for (int i = 0; i < np; i++) if (pts[i * 2] < -1e-6 || pts[i * 2] > 200 + 1e-6 || pts[i * 2 + 1] < -1e-6 || pts[i * 2 + 1] > 300 + 1e-6) inside = false;
+    bool all_used = true;
+    for (int i = 0; i < np; i++) if (!used[i]) all_used = false;
+    check (near (area, 60000, 1), "triangles cover the rectangle %.1f".printf (area));
+    check (inside, "points stay inside");
+    check (all_used, "every point belongs to a triangle");
+    bool kept = true;
+    for (int i = 0; i < ring.length; i++) if (pts[i] != ring[i]) kept = false;
+    check (kept, "boundary points come first and unchanged");
+    AtCore.free (pts);
+    AtCore.free (tris);
+}
+
+void test_collider () {
+    var body = standard_body ();
+    var mesh = body.mesh;
+    var t0 = get_monotonic_time ();
+    var sdf = AtCore.Sdf.build (mesh.positions, mesh.vertex_count, mesh.triangles, mesh.triangles.length, 8, 70);
+    double secs = (get_monotonic_time () - t0) / 1e6;
+    check (sdf != null, "collider builds");
+    check (secs < 5, "collider builds in %.2f s".printf (secs));
+    var m = body.measures;
+    var grad = new float[3];
+    float inside = sdf.sample (0, (float) m.y_waist, 65, grad);
+    check (inside < -40, "torso centre is deep inside %.1f".printf (inside));
+    float front = sdf.sample (0, (float) m.y_bust, 260, grad);
+    check (front > 20, "in front of the chest is outside %.1f".printf (front));
+    float lo = 0, hi = 400;
+    for (int i = 0; i < 40; i++) {
+        float mid = (lo + hi) / 2;
+        if (sdf.sample (0, (float) m.y_waist, mid, null) < 0) lo = mid;
+        else hi = mid;
+    }
+    sdf.sample (0, (float) m.y_waist, hi + 4, grad);
+    check (grad[2] > 0.7, "gradient points out of the belly %.2f".printf (grad[2]));
+    check (sdf.sample (0, (float) m.y_waist, hi + 10, null) > 6, "distance grows outside");
+    check (sdf.sample (700, 300, 0, null) > 100, "far away is far");
 }
 
 void test_hanging_patch () {
-    Point[] ring = {};
-    double w = 400, h = 400, sp = 20;
-    for (double x = 0; x < w; x += sp) ring += Point (x, 0);
-    for (double y = 0; y < h; y += sp) ring += Point (w, y);
-    for (double x = w; x > 0; x -= sp) ring += Point (x, h);
-    for (double y = h; y > 0; y -= sp) ring += Point (0, y);
-    var interior = ClothMesher.lattice (ring, sp);
-    int[] tris;
-    ClothMesher.triangulate (ring, interior, out tris);
-    Point[] pts = ring;
-    foreach (var p in interior) pts += p;
-    check (tris.length / 3 > pts.length, "triangulation has triangles %d for %d points".printf (tris.length / 3, pts.length));
-    double area = 0;
-    for (int t = 0; t < tris.length; t += 3) {
-        var a = pts[tris[t]];
-        var b = pts[tris[t + 1]];
-        var c = pts[tris[t + 2]];
-        area += ((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)).abs () / 2;
+    var cloth = new AtCore.Cloth ();
+    int fabric = cloth.add_fabric (GarmentSim.physical (FabricPreset.find ("cotton")));
+    int n = 16;
+    for (int j = 0; j < n; j++) for (int i = 0; i < n; i++) cloth.add_particle (i * 20, 1500, j * 20, i * 20, j * 20, 0);
+    for (int j = 0; j + 1 < n; j++) for (int i = 0; i + 1 < n; i++) {
+        int a = j * n + i;
+        cloth.add_triangle (a, a + 1, a + n, fabric);
+        cloth.add_triangle (a + 1, a + n + 1, a + n, fabric);
     }
-    check ((area - w * h).abs () / (w * h) < 0.02, "triangles cover the patch %f".printf (area));
-    var fab = FabricPreset.find ("cotton");
-    var s = new ClothState ();
-    double mass = fab.density * w * h * 1e-6 / pts.length;
-    foreach (var p in pts) {
-        bool pin = p.y < 1e-6;
-        s.add_particle (Vec3 (p.x, 1000, p.y), p.x, p.y, pin ? 0 : mass, 0.3, 1);
-    }
-    var seen = new Gee.HashSet<string> ();
-    for (int t = 0; t < tris.length; t += 3) {
-        for (int e = 0; e < 3; e++) {
-            int a = tris[t + e], b = tris[t + (e + 1) % 3];
-            string key = a < b ? "%d:%d".printf (a, b) : "%d:%d".printf (b, a);
-            if (seen.contains (key)) continue;
-            seen.add (key);
-            s.add_constraint (a, b, pts[a].distance (pts[b]), fab.stretch_compliance, 0);
+    cloth.finalize ();
+    for (int i = 0; i < n; i++) cloth.pin (i, 1);
+    for (int f = 0; f < 240; f++) cloth.step (1.0f / 60, 14);
+    unowned float[] x = cloth.positions ();
+    check (near (x[1], 1500, 1e-3) && near (x[0], 0, 1e-3), "pinned corner stays");
+    double low = x[((n - 1) * n + n / 2) * 3 + 1];
+    check (low < 1500 - 280 && low > 1500 - 330, "free edge hangs %.0f below the pins".printf (1500 - low));
+    var strain = new float[cloth.count ()];
+    cloth.strain (strain);
+    float worst = 0;
+    foreach (var s in strain) if (s > worst) worst = s;
+    check (worst < 0.06, "poplin barely stretches under its own weight %.3f".printf (worst));
+    check (cloth.kinetic () < 60, "patch comes to rest %.1f".printf (cloth.kinetic ()));
+}
+
+void test_bending () {
+    double[] droop = {};
+    foreach (unowned string id in new string[] { "silk", "denim" }) {
+        var cloth = new AtCore.Cloth ();
+        int fabric = cloth.add_fabric (GarmentSim.physical (FabricPreset.find (id)));
+        int n = 7;
+        for (int j = 0; j < n; j++) for (int i = 0; i < n; i++) cloth.add_particle (i * 12, 1000, j * 12, i * 12, j * 12, 0);
+        for (int j = 0; j + 1 < n; j++) for (int i = 0; i + 1 < n; i++) {
+            int a = j * n + i;
+            cloth.add_triangle (a, a + 1, a + n, fabric);
+            cloth.add_triangle (a + 1, a + n + 1, a + n, fabric);
         }
+        cloth.finalize ();
+        for (int j = 0; j < n; j++) {
+            cloth.pin (j * n, 1);
+            cloth.pin (j * n + 1, 1);
+        }
+        for (int f = 0; f < 180; f++) cloth.step (1.0f / 60, 14);
+        unowned float[] x = cloth.positions ();
+        droop += 1000 - x[(n / 2 * n + n - 1) * 3 + 1];
     }
-    var solver = new CpuXpbdSolver ();
-    for (int f = 0; f < 240; f++) solver.step (s, null, 1.0 / 60, 12);
-    double worst = 0;
-    double speed = 0;
-    for (int c = 0; c < s.m; c++) worst = double.max (worst, s.pos (s.ca[c]).distance (s.pos (s.cb[c])) / s.rest[c] - 1);
-    for (int i = 0; i < s.n; i++) speed = double.max (speed, Math.sqrt (s.vx[i] * s.vx[i] + s.vy[i] * s.vy[i] + s.vz[i] * s.vz[i]));
-    double low = 1000;
-    for (int i = 0; i < s.n; i++) low = double.min (low, s.y[i]);
-    check (low < 1000 - h * 0.8, "patch hangs down %f".printf (low));
-    check (worst < 0.05, "edge stretch after settling %f".printf (worst));
+    check (droop[0] > droop[1] + 12, "silk droops more than denim (%.0f vs %.0f mm)".printf (droop[0], droop[1]));
 }
 
 void test_garment () {
@@ -99,259 +164,54 @@ void test_garment () {
     Samples.tshirt_pattern (p);
     var r = p.evaluate ("38");
     var settings = new GarmentSettings ();
-    settings.resolution = 22;
-    var sim = new GarmentSim (r, settings, p.table, "38");
-    check (sim.instances.size == 4, "front, back and two sleeves, got %d".printf (sim.instances.size));
-    check (sim.sew_a.size > 20, "seams found %d".printf (sim.sew_a.size));
-    double gap0 = sim.max_sew_gap ();
-    check (sim.min_collider_distance () > -1, "starts outside the body %f".printf (sim.min_collider_distance ()));
-    var t0 = get_monotonic_time ();
-    sim.run (150);
-    double secs = (get_monotonic_time () - t0) / 1e6;
-    double gap = sim.max_sew_gap ();
-    check (gap < 10, "seams closed %f (from %f)".printf (gap, gap0));
-    check (sim.mean_sew_gap () < 3, "mean seam gap %f".printf (sim.mean_sew_gap ()));
-    double pen = sim.min_collider_distance ();
-    check (pen > -2, "no vertex inside the body %f".printf (pen));
-    var mesh = sim.garment_mesh ();
-    check (mesh.vertices.size == sim.state.n && mesh.scalars.size == sim.state.n, "garment mesh with fit map");
-    Vec3 min, max;
-    mesh.bounds (out min, out max);
-    check (min.y > sim.avatar.dims.y_crotch () - 350 && max.y < sim.avatar.dims.height, "garment hangs on the body %f %f".printf (min.y, max.y));
-    check (sim.max_stretch () < 0.6, "stretch stays bounded %f".printf (sim.max_stretch ()));
-    var strain = sim.strain_map ();
-    int over = 0;
-    foreach (var st in strain) if (st > 0.1) over++;
-    check (over < strain.length / 20, "few vertices above 10 percent strain: %d".printf (over));
-    var dist = sim.distance_map ();
-    double mean = 0;
-    foreach (var d in dist) mean += d;
-    mean /= dist.length;
-    check (mean < 120, "garment sits close to the body %f".printf (mean));
-    print ("garment: %d particles, %d constraints, 150 frames in %.1f s, gap %.2f mm, min distance %.2f mm, max stretch %.3f\n", sim.state.n, sim.state.m, secs, gap, pen, sim.max_stretch ());
-    p.find_piece (r.pieces[0].piece.id);
-    var r2 = p.evaluate ("40");
-    sim.rebuild (r2);
-    check (sim.min_collider_distance () > -5, "rebuild keeps the pose");
-    sim.run (20);
-    check (sim.min_collider_distance () > -2, "rebuilt garment settles outside the body");
-}
-
-ClothState two_layers () {
-    var s = new ClothState ();
-    double h = 10;
-    for (int layer = 0; layer < 2; layer++) {
-        int n = layer == 0 ? 12 : 8;
-        int base_i = s.n;
-        for (int j = 0; j < n; j++) for (int i = 0; i < n; i++) {
-            bool pinned = layer == 0 && (i == 0 || j == 0 || i == n - 1 || j == n - 1);
-            s.add_particle (Vec3 (i * h + (layer == 1 ? 18 : 0), layer == 0 ? 0 : 40, j * h + (layer == 1 ? 18 : 0)), i * h, j * h, pinned ? 0 : 0.5, 0.3, 1.5);
-        }
-        for (int j = 0; j < n; j++) for (int i = 0; i < n; i++) {
-            int a = base_i + j * n + i;
-            if (i < n - 1) s.add_constraint (a, a + 1, h, 1e-7, 0);
-            if (j < n - 1) s.add_constraint (a, a + n, h, 1e-7, 0);
-            if (i < n - 1 && j < n - 1) {
-                s.add_constraint (a, a + n + 1, h * Math.SQRT2, 1e-6, 1);
-                s.add_tri (a, a + 1, a + n);
-                s.add_tri (a + 1, a + n + 1, a + n);
-            }
-        }
-    }
-    s.group = new int[s.n];
-    for (int i = 0; i < s.n; i++) s.group[i] = i < 144 ? 0 : 1;
-    s.spacing = h;
-    s.damping = 0.05;
-    return s;
-}
-
-double layer_gap (ClothState s) {
-    int n2 = 144;
-    double worst = double.INFINITY;
-    for (int i = n2; i < s.n; i++) {
-        double below = -1e9;
-        for (int j = 0; j < n2; j++) {
-            if ((s.x[j] - s.x[i]).abs () < 6 && (s.z[j] - s.z[i]).abs () < 6) below = double.max (below, s.y[j]);
-        }
-        if (below > -1e9) worst = double.min (worst, s.y[i] - below);
-    }
-    return worst;
-}
-
-ClothState folded_sheet () {
-    var s = new ClothState ();
-    double h = 10;
-    int n = 12, rows = 24;
-    for (int j = 0; j < rows; j++) for (int i = 0; i < n; i++) {
-        bool lower = j < n;
-        bool pinned = lower && (i == 0 || i == n - 1 || j == 0);
-        double z = lower ? j * h : (rows - 1 - j) * h + 5;
-        s.add_particle (Vec3 (i * h + (lower ? 0 : 2), lower ? 0 : 40, z), i * h, j * h, pinned ? 0 : 0.5, 0.3, 1.5);
-    }
-    for (int j = 0; j < rows; j++) for (int i = 0; i < n; i++) {
-        int a = j * n + i;
-        if (i < n - 1) s.add_constraint (a, a + 1, h, 1e-7, 0);
-        if (j < rows - 1) s.add_constraint (a, a + n, j == n - 1 ? s.pos (a).distance (s.pos (a + n)) : h, 1e-7, 0);
-        if (i < n - 1 && j < rows - 1) {
-            if (j != n - 1) s.add_constraint (a, a + n + 1, h * Math.SQRT2, 1e-6, 1);
-            s.add_tri (a, a + 1, a + n);
-            s.add_tri (a + 1, a + n + 1, a + n);
-        }
-    }
-    s.group = new int[s.n];
-    s.spacing = h;
-    s.damping = 0.05;
-    return s;
-}
-
-double fold_gap (ClothState s, out int wrong) {
-    int n = 12;
-    double worst = double.INFINITY;
-    wrong = 0;
-    for (int i = n * 15; i < s.n; i++) {
-        if (i % n == 0 || i % n == n - 1) continue;
-        double px = s.x[i], pz = s.z[i];
-        for (int t = 0; t < s.nt; t++) {
-            int a = s.tris[t * 3], b = s.tris[t * 3 + 1], c = s.tris[t * 3 + 2];
-            if (a >= n * 12 || b >= n * 12 || c >= n * 12) continue;
-            double x1 = s.x[b] - s.x[a], z1 = s.z[b] - s.z[a];
-            double x2 = s.x[c] - s.x[a], z2 = s.z[c] - s.z[a];
-            double det = x1 * z2 - x2 * z1;
-            if (det.abs () < 1e-9) continue;
-            double qx = px - s.x[a], qz = pz - s.z[a];
-            double u = (qx * z2 - x2 * qz) / det;
-            double v = (x1 * qz - qx * z1) / det;
-            if (u < 0 || v < 0 || u + v > 1) continue;
-            double y = s.y[a] + u * (s.y[b] - s.y[a]) + v * (s.y[c] - s.y[a]);
-            double side = s.y[i] - y;
-            worst = double.min (worst, side);
-            if (side < 0) wrong++;
-        }
-    }
-    return worst;
-}
-
-double upper_minus_lower (ClothState s) {
-    int n = 12;
-    double up = 0, lo = 0;
-    for (int i = 0; i < n * 11; i++) lo += s.y[i];
-    for (int i = n * 15; i < s.n; i++) up += s.y[i];
-    return up / (s.n - n * 15) - lo / (n * 11);
-}
-
-void test_self_collision () {
-    var fold = folded_sheet ();
-    var fs = new ParallelXpbdSolver ();
-    for (int f = 0; f < 90; f++) fs.step (fold, null, 1.0 / 60, 10);
-    int wrong;
-    double fg = fold_gap (fold, out wrong);
-    check (wrong == 0 && upper_minus_lower (fold) > 0, "folded sheet does not pass through itself (%f mm, %d crossed)".printf (fg, wrong));
-    var fold_off = folded_sheet ();
-    var fs_off = new ParallelXpbdSolver ();
-    fs_off.self_collision = false;
-    for (int f = 0; f < 90; f++) fs_off.step (fold_off, null, 1.0 / 60, 10);
-    check (upper_minus_lower (fold_off) < 0, "without self collision the fold passes through (%f mm)".printf (upper_minus_lower (fold_off)));
-    var on = two_layers ();
-    var solver = new ParallelXpbdSolver ();
-    for (int f = 0; f < 90; f++) solver.step (on, null, 1.0 / 60, 10);
-    double gap_on = layer_gap (on);
-    check (gap_on > 0.5, "upper layer rests on the lower one (%f mm)".printf (gap_on));
-    var off = two_layers ();
-    var plain = new ParallelXpbdSolver ();
-    plain.self_collision = false;
-    for (int f = 0; f < 90; f++) plain.step (off, null, 1.0 / 60, 10);
-    check (layer_gap (off) < 0, "without self collision the layers pass through (%f mm)".printf (layer_gap (off)));
-}
-
-double bench (ClothSolver solver, int frames, out double gap) {
-    var p = new Pattern ();
-    Samples.tshirt_pattern (p);
-    var settings = new GarmentSettings ();
-    settings.resolution = 14;
-    var sim = new GarmentSim (p.evaluate ("38"), settings, p.table, "38");
-    sim.solver = solver;
-    var t0 = get_monotonic_time ();
-    sim.run (frames);
-    gap = sim.max_sew_gap ();
-    return (get_monotonic_time () - t0) / 1e6;
-}
-
-double best_of (ClothSolver solver, int frames, int runs, out double gap) {
-    double best = double.MAX;
-    gap = 0;
-    for (int r = 0; r < runs; r++) best = double.min (best, bench (solver, frames, out gap));
-    return best;
-}
-
-void test_benchmark () {
-    double g1, g2, g3, g4;
-    int threads = ((int) get_num_processors ()).clamp (1, 16);
-    int runs = Environment.get_variable ("ATELIER_BENCH") != null ? 3 : 1;
-    double t_serial = best_of (new CpuXpbdSolver (), 120, runs, out g1);
-    var nocoll = new ParallelXpbdSolver (new WorkPool (threads));
-    nocoll.self_collision = false;
-    nocoll.adaptive = false;
-    double t_nocoll = best_of (nocoll, 120, runs, out g2);
-    double t_one = best_of (new ParallelXpbdSolver (new WorkPool (1)), 120, runs, out g3);
-    var fixed_many = new ParallelXpbdSolver (new WorkPool (threads));
-    fixed_many.adaptive = false;
-    double t_many = best_of (fixed_many, 120, runs, out g4);
-    double g5;
-    best_of (new ParallelXpbdSolver (new WorkPool (threads)), 120, 1, out g5);
-    print ("benchmark t-shirt 14 mm, 120 frames, best of %d: before (serial, no self collision) %.2f s; after, %d threads without self collision %.2f s (%.2fx); with self and layer collision 1 thread %.2f s, %d threads %.2f s (%.2fx); seam gaps %.2f %.2f %.2f %.2f mm\n",
-        runs, t_serial, threads, t_nocoll, t_serial / t_nocoll, t_one, threads, t_many, t_one / t_many, g1, g2, g3, g4);
-    check (g2 < 8 && g4 < 8, "parallel solver closes the seams too");
-    check (near (g5, g3, 1e-9), "adaptive solver gives the same seams");
-    if (Environment.get_variable ("ATELIER_BENCH") != null) {
-        int wins = 0;
-        int serial_wins = 0;
-        for (int r = 0; r < 3; r++) {
-            double g;
-            var one = new ParallelXpbdSolver (new WorkPool (1));
-            var all = new ParallelXpbdSolver (new WorkPool (threads));
-            all.adaptive = false;
-            var auto = new ParallelXpbdSolver (new WorkPool (threads));
-            var auto_free = new ParallelXpbdSolver (new WorkPool (threads));
-            auto_free.self_collision = false;
-            double a = bench (one, 40, out g), b = bench (all, 40, out g), c = bench (auto, 40, out g);
-            double d = bench (new CpuXpbdSolver (), 40, out g), e = bench (auto_free, 40, out g);
-            print ("adaptive round %d, 40 frames: one thread %.2f s, %d threads %.2f s, adaptive %.2f s; without collision serial %.2f s, adaptive %.2f s; load %s\n", r + 1, a, threads, b, c, d, e, load_average ());
-            if (c <= 1.25 * double.min (a, b)) wins++;
-            if (e <= 1.25 * d) serial_wins++;
-        }
-        check (wins >= 2, "adaptive solver keeps up with the faster of one thread and all threads");
-        check (serial_wins >= 2, "adaptive solver is not slower than the serial solver");
-    }
-}
-
-string load_average () {
-    try {
-        string text;
-        FileUtils.get_contents ("/proc/loadavg", out text);
-        return text.split (" ")[0];
-    } catch (Error e) {
-        return "unknown";
-    }
-}
-
-void test_adaptive_workers () {
-    var auto = new ParallelXpbdSolver (new WorkPool (4));
-    auto.tune_period = 8;
-    var one = new ParallelXpbdSolver (new WorkPool (1));
-    var p = new Pattern ();
-    Samples.tshirt_pattern (p);
-    var settings = new GarmentSettings ();
     settings.resolution = 20;
-    var a = new GarmentSim (p.evaluate ("38"), settings, p.table, "38");
-    var b = new GarmentSim (p.evaluate ("38"), settings, p.table, "38");
-    a.solver = auto;
-    b.solver = one;
-    a.run (20);
-    b.run (20);
-    check (auto.workers == 1 || auto.workers == 4, "adaptive solver picks one thread or the whole pool (%d)".printf (auto.workers));
-    bool same = a.state.n == b.state.n;
-    for (int i = 0; same && i < a.state.n; i++) same = a.state.x[i] == b.state.x[i] && a.state.y[i] == b.state.y[i] && a.state.z[i] == b.state.z[i];
-    check (same, "switching thread count during the run does not change the result");
+    var body = standard_body ();
+    var sim = new GarmentSim (r, settings, body);
+    check (sim.pieces.size == 4, "front, back and two sleeves, got %d".printf (sim.pieces.size));
+    check (settings.seams.size == 5, "shoulders, sides, underarm and two cap seams, got %d".printf (settings.seams.size));
+    check (sim.stitch_count () > 100, "stitches %d".printf (sim.stitch_count ()));
+    check (sim.min_body_distance () > 0, "starts outside the body %.2f".printf (sim.min_body_distance ()));
+    double gap0 = sim.max_sew_gap ();
+    var t0 = get_monotonic_time ();
+    sim.run (240);
+    double ms = (get_monotonic_time () - t0) / 1e3 / 240;
+    double gap = sim.max_sew_gap ();
+    check (gap < 14, "seams closed %.1f (from %.0f)".printf (gap, gap0));
+    check (sim.max_stretch () < 0.2, "no wild stretching %.3f".printf (sim.max_stretch ()));
+    check (sim.min_body_distance () > 0.5, "cloth stays outside the body %.2f".printf (sim.min_body_distance ()));
+    check (sim.motion () < 30, "garment settles %.1f".printf (sim.motion ()));
+    check (ms < 80, "%.1f ms per frame for %d particles".printf (ms, sim.particle_count ()));
+    double hem = double.INFINITY, top = 0;
+    foreach (var piece in sim.pieces) {
+        Singularity.Scene.Vec3 lo, hi;
+        piece.mesh.bounds (out lo, out hi);
+        hem = double.min (hem, lo.y);
+        top = double.max (top, hi.y);
+    }
+    var m = body.measures;
+    check (top > m.y_shoulder && top < m.y_neck + 60, "collar sits at the neck %.0f".printf (top));
+    check (hem > m.y_crotch - 80 && hem < m.y_waist, "hem hangs between waist and thigh %.0f".printf (hem));
+    var again = new GarmentSim (r, settings, body);
+    again.run (240);
+    check (near (again.max_sew_gap (), gap, 1e-6), "simulation is repeatable");
+    var meshes = sim.export_meshes ();
+    check (meshes.size == 5 && meshes[1].triangles.size > 0, "export has the body and four pieces");
+}
+
+void test_scene_mesh () {
+    var pm = new ProductModel ();
+    pm.make_cube (100);
+    var mesh = pm.subdivided ().to_scene (true);
+    check (mesh.vertex_count > 0 && mesh.normals.length == mesh.positions.length, "scene mesh has normals");
+    check (mesh.scalars.length == mesh.vertex_count, "curvature scalars are filled");
+    var hit = Singularity.Scene.Hit () { mesh = null, triangle = -1, distance = double.INFINITY };
+    var ray = Singularity.Scene.Ray () { origin = Singularity.Scene.Vec3 (0, 0, 500), direction = Singularity.Scene.Vec3 (0, 0, -1) };
+    check (mesh.intersect (ray, ref hit) && hit.point.z > 0 && hit.point.z < 100, "ray hits the front of the model at %.1f".printf (hit.point.z));
+    var miss = Singularity.Scene.Hit () { mesh = null, triangle = -1, distance = double.INFINITY };
+    var away = Singularity.Scene.Ray () { origin = Singularity.Scene.Vec3 (500, 500, 500), direction = Singularity.Scene.Vec3 (0, 0, -1) };
+    check (!mesh.intersect (away, ref miss), "ray beside the model misses");
+    var back = Mesh.from_scene (mesh);
+    check (back.vertices.size == mesh.vertex_count && back.triangles.size == mesh.triangles.length, "round trip keeps the topology");
 }
 
 void test_subdivision () {
@@ -402,60 +262,16 @@ void test_subdivision () {
     check (curve.point3d (0).y == 10 && curve.point3d (0).z == 2, "plane curve mapping");
 }
 
-void test_renderer () {
-    var pm = new ProductModel ();
-    pm.make_cube (100);
-    var meshes = new Gee.ArrayList<Mesh> ();
-    meshes.add (pm.subdivided ());
-    var cam = new Camera ();
-    cam.frame (meshes);
-    var surf = new Cairo.ImageSurface (Cairo.Format.ARGB32, 160, 120);
-    var r = new CpuRenderer ();
-    foreach (var shading in new string[] { "material", "wireframe", "zebra", "curvature" }) {
-        var opt = new RenderOptions ();
-        opt.shading = shading;
-        r.render (surf, meshes, cam, opt);
-    }
-    int mi, vi;
-    check (r.pick (80, 60, out mi, out vi) && mi == 0, "center pixel hits the model");
-    check (!r.pick (2, 2, out mi, out vi), "corner is background");
-    surf.flush ();
-    unowned uint8[] d = surf.get_data ();
-    int o = 60 * surf.get_stride () + 80 * 4;
-    int o2 = 2 * surf.get_stride () + 2 * 4;
-    check (d[o] != d[o2] || d[o + 1] != d[o2 + 1], "model pixels differ from background");
-    var sphere = new ProductModel ();
-    sphere.make_cube (100);
-    var round = new Gee.ArrayList<Mesh> ();
-    round.add (sphere.subdivided ());
-    var cam2 = new Camera ();
-    cam2.frame (round);
-    var zs = new Cairo.ImageSurface (Cairo.Format.ARGB32, 160, 120);
-    var zo = new RenderOptions ();
-    zo.shading = "zebra";
-    new CpuRenderer ().render (zs, round, cam2, zo);
-    zs.flush ();
-    unowned uint8[] z = zs.get_data ();
-    int bands = 0;
-    bool was_dark = false;
-    for (int y = 20; y < 100; y++) {
-        int q = y * zs.get_stride () + 80 * 4;
-        bool dark = (z[q] + z[q + 1] + z[q + 2]) / 3 < 110;
-        if (y > 20 && dark != was_dark) bands++;
-        was_dark = dark;
-    }
-    check (bands >= 4, "zebra shading draws alternating stripes (%d changes down the middle)".printf (bands));
-}
 
 int main () {
-    test_self_collision ();
-    test_adaptive_workers ();
-    test_benchmark ();
-    test_avatar ();
     test_fabrics ();
+    test_mesher ();
+    test_body ();
+    test_collider ();
     test_hanging_patch ();
+    test_bending ();
     test_subdivision ();
-    test_renderer ();
+    test_scene_mesh ();
     test_garment ();
     return finish ("sim");
 }

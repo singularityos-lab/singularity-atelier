@@ -10,7 +10,7 @@ Atelier for the [Singularity Desktop Environment](https://github.com/singularity
 
 - [Meson](https://mesonbuild.com/) ≥ 1.0
 - [Vala](https://vala.dev/) compiler
-- libgee-0.8, json-glib-1.0, libxml-2.0, zlib, cairo, pangocairo, gdk-pixbuf-2.0, GTK4, gstreamer-1.0, libpeas-2
+- libgee-0.8, json-glib-1.0, libxml-2.0, zlib, cairo, pangocairo, gdk-pixbuf-2.0, GTK4 with OpenGL, gstreamer-1.0, libpeas-2
 - [libsingularity](https://github.com/singularityos-lab/libsingularity)
 
 ## Build & Install
@@ -20,6 +20,10 @@ meson setup build
 meson compile -C build
 meson install -C build
 ```
+
+## Avatar
+
+The 3D avatar is built from the [MakeHuman](http://www.makehumancommunity.org/) base mesh, targets and skeleton, which are released under CC0. `tools/bake_avatar.py` regenerates `data/avatar/body.bin` from a MakeHuman data directory.
 
 ## License
 

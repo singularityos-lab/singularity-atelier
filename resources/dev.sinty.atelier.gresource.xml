@@ -60,4 +60,7 @@
     <file alias="atelier-new-product.svg">scalable/atelier-new-product.svg</file>
     <file alias="atelier-new-automotive.svg">scalable/atelier-new-automotive.svg</file>
   </gresource>
+  <gresource prefix="/dev/sinty/atelier/avatar">
+    <file compressed="true" alias="body.bin">avatar/body.bin</file>
+  </gresource>
 </gresources>

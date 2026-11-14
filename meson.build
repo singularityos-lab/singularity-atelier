@@ -43,7 +43,7 @@ plugin_api = shared_library('atelier-plugin',
 plugin_api_dep = declare_dependency(link_with: plugin_api, include_directories: include_directories('.'))
 
 core_deps = [gee_dep, gio_dep, json_dep, xml_dep, zlib_dep, cairo_dep, pango_dep, pixbuf_dep, gtk_dep, math_dep, gst_dep, peas_dep, plugin_api_dep, libsingularity_dep]
-core_args = ['--pkg', 'zlib']
+core_args = ['--pkg', 'zlib', '--vapidir', meson.current_source_dir() / 'vapi', '--pkg', 'atelier-core']
 if lcms_dep.found()
   core_deps += [lcms_dep]
   core_args += ['--vapidir', meson.current_source_dir() / 'vapi', '--pkg', 'lcms2', '-D', 'HAVE_LCMS']
@@ -73,12 +73,13 @@ model = files(
 sim = files(
   'src/sim/vec.vala',
   'src/sim/mesh.vala',
-  'src/sim/avatar.vala',
+  'src/sim/body.vala',
   'src/sim/fabric.vala',
-  'src/sim/cloth.vala',
-  'src/sim/cloth_parallel.vala',
+  'src/sim/garment.vala',
+  'src/sim/core/mesher.c',
+  'src/sim/core/sdf.c',
+  'src/sim/core/cloth.c',
   'src/sim/subdiv.vala',
-  'src/sim/raster3d.vala',
   'src/sim/nurbs.vala',
   'src/sim/product_editor.vala',
 )
@@ -118,7 +119,7 @@ gnome = import('gnome')
 resources = gnome.compile_resources(
   'singularity-atelier-resources',
   'resources/dev.sinty.atelier.gresource.xml',
-  source_dir: meson.current_source_dir() / 'data' / 'icons',
+  source_dir: [meson.current_source_dir() / 'data' / 'icons', meson.current_source_dir() / 'data'],
 )
 
 ui = files(
@@ -149,6 +150,7 @@ ui = files(
 
 executable('singularity-atelier',
   core + ui + [resources],
+  include_directories: include_directories('src'),
   dependencies: core_deps,
   vala_args: core_args,
   install_rpath: get_option('prefix') / get_option('libdir'),
@@ -170,7 +172,8 @@ test_env = ['SINGULARITY_ATELIER_PLUGIN_PATH=' + meson.current_build_dir(), 'TMP
 
 foreach t : ['model', 'grading', 'sketch', 'dxf', 'seamly', 'formats', 'techpack', 'sim', 'mesh-io', 'plugin', 'product']
   exe = executable('atelier-' + t + '-test',
-    core + files('tests/harness.vala', 'tests/' + t.underscorify() + '_test.vala'),
+    core + files('tests/harness.vala', 'tests/' + t.underscorify() + '_test.vala') + [resources],
+    include_directories: include_directories('src'),
     dependencies: core_deps,
     vala_args: core_args,
   )

@@ -49,6 +49,82 @@ namespace Singularity.Apps.Atelier {
             foreach (var n in acc) normals.add (n.normalized ());
         }
 
+        public double[] curvature () {
+            int n = vertices.size;
+            var sum = new double[n];
+            var cnt = new int[n];
+            if (normals.size != n) compute_normals ();
+            for (int t = 0; t + 2 < triangles.size; t += 3) {
+                for (int e = 0; e < 3; e++) {
+                    int a = triangles[t + e], b = triangles[t + (e + 1) % 3];
+                    double len = vertices[a].distance (vertices[b]);
+                    if (len < 1e-9) continue;
+                    double ang = Math.acos (normals[a].dot (normals[b]).clamp (-1, 1));
+                    sum[a] += ang / len;
+                    sum[b] += ang / len;
+                    cnt[a]++;
+                    cnt[b]++;
+                }
+            }
+            for (int i = 0; i < n; i++) if (cnt[i] > 0) sum[i] /= cnt[i];
+            return sum;
+        }
+
+        public static Mesh from_scene (Scene.Mesh src) {
+            var m = new Mesh ();
+            m.name = src.name;
+            int n = src.vertex_count;
+            for (int i = 0; i < n; i++) m.vertices.add (Vec3 (src.positions[i * 3], src.positions[i * 3 + 1], src.positions[i * 3 + 2]));
+            if (src.normals.length == n * 3) for (int i = 0; i < n; i++) m.normals.add (Vec3 (src.normals[i * 3], src.normals[i * 3 + 1], src.normals[i * 3 + 2]));
+            if (src.uvs.length == n * 2) for (int i = 0; i < n * 2; i++) m.uvs.add (src.uvs[i]);
+            for (int i = 0; i < src.triangles.length; i++) m.triangles.add ((int) src.triangles[i]);
+            var c = src.material.color;
+            m.color = Rgba (c.red, c.green, c.blue, c.alpha);
+            m.roughness = src.material.roughness;
+            m.metallic = src.material.metallic;
+            m.double_sided = src.material.double_sided;
+            return m;
+        }
+
+        public Scene.Mesh to_scene (bool with_curvature = false) {
+            var m = new Scene.Mesh ();
+            m.name = name;
+            int n = vertices.size;
+            m.positions = new float[n * 3];
+            for (int i = 0; i < n; i++) {
+                var v = vertices[i];
+                m.positions[i * 3] = (float) v.x;
+                m.positions[i * 3 + 1] = (float) v.y;
+                m.positions[i * 3 + 2] = (float) v.z;
+            }
+            m.triangles = new uint[triangles.size];
+            for (int i = 0; i < triangles.size; i++) m.triangles[i] = triangles[i];
+            m.lines = new uint[lines.size];
+            for (int i = 0; i < lines.size; i++) m.lines[i] = lines[i];
+            if (uvs.size == n * 2) {
+                m.uvs = new float[n * 2];
+                for (int i = 0; i < n * 2; i++) m.uvs[i] = (float) uvs[i];
+            }
+            if (with_curvature && triangles.size > 0) {
+                var c = curvature ();
+                double cmax = 0;
+                foreach (var k in c) cmax = double.max (cmax, k);
+                m.scalars = new float[n];
+                for (int i = 0; i < n; i++) m.scalars[i] = cmax > 0 ? (float) Math.sqrt (c[i] / cmax) : 0;
+            } else if (scalars.size == n) {
+                m.scalars = new float[n];
+                for (int i = 0; i < n; i++) m.scalars[i] = (float) scalars[i];
+            }
+            if (triangles.size > 0) m.compute_normals ();
+            m.visible = visible;
+            m.material.color = Gdk.RGBA () { red = (float) color.r, green = (float) color.g, blue = (float) color.b, alpha = (float) color.a };
+            m.material.roughness = roughness;
+            m.material.metallic = metallic;
+            m.material.double_sided = double_sided;
+            if (triangles.size == 0) m.material.shading = Scene.Shading.FLAT;
+            return m;
+        }
+
         public void bounds (out Vec3 min, out Vec3 max) {
             min = Vec3 (double.INFINITY, double.INFINITY, double.INFINITY);
             max = Vec3 (-double.INFINITY, -double.INFINITY, -double.INFINITY);

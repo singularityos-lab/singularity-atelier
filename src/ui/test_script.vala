@@ -312,6 +312,18 @@ namespace Singularity.Apps.Atelier {
                 case "garment":
                     win.show_workspace ("3d");
                     return 800;
+                case "simulate":
+                    if (win.garment_panel != null) win.garment_panel.simulate_for (int.parse (a[1]));
+                    return 600;
+                case "camera": {
+                    var c = win.view3d.camera;
+                    c.yaw = double.parse (a[1]) * Math.PI / 180;
+                    c.pitch = double.parse (a[2]) * Math.PI / 180;
+                    if (a.length > 3) c.distance = double.parse (a[3]);
+                    if (a.length > 4) c.target = Scene.Vec3 (a.length > 5 ? double.parse (a[5]) : c.target.x, double.parse (a[4]), c.target.z);
+                    win.view3d.queue_render ();
+                    return 500;
+                }
                 case "turntable":
                     if (win.garment_panel != null) win.garment_panel.turntable (rest);
                     return 3000;

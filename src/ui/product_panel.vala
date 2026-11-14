@@ -245,6 +245,7 @@ namespace Singularity.Apps.Atelier {
         }
 
         public void refresh () {
+            view.set_native (new Gee.ArrayList<Scene.Mesh> ());
             syncing = true;
             level_row.value = model.levels;
             material_row.current_value = ProductModel.material_label (model.material);
