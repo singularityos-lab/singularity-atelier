@@ -558,14 +558,16 @@ namespace Singularity.Apps.Atelier {
         public BodyMeasures measures;
         public Scene.Mesh mesh;
         public string hair = "";
+        public Rgba hair_color = Rgba (0.20, 0.13, 0.10, 1);
         public uint[] solid_triangles = {};
         public int solid_vertices;
         public Gee.ArrayList<Scene.Mesh> extras = new Gee.ArrayList<Scene.Mesh> ();
         private BodyData data;
 
-        public static Body build (BodyShape shape, BodyPose pose, string hair = "") {
+        public static Body build (BodyShape shape, BodyPose pose, string hair = "", Rgba? hair_color = null) {
             var b = new Body ();
             b.hair = hair;
+            if (hair_color != null) b.hair_color = hair_color;
             b.data = BodyData.get_default ();
             b.shape = shape;
             b.pose = pose;
@@ -974,7 +976,7 @@ namespace Singularity.Apps.Atelier {
             extras.add (part (iris, 0.30f, 0.21f, 0.14f, 0.2));
             extras.add (part (pupil, 0.03f, 0.03f, 0.03f, 0.15));
             extras.add (part (wear, 0.87f, 0.86f, 0.84f, 0.85));
-            var brow_mesh = part (brows, 0.24f, 0.16f, 0.11f, 0.8);
+            var brow_mesh = part (brows, (float) (hair_color.r * 0.85), (float) (hair_color.g * 0.85), (float) (hair_color.b * 0.85), 0.8);
             extras.add (brow_mesh);
             add_hair ();
         }
@@ -1008,7 +1010,7 @@ namespace Singularity.Apps.Atelier {
             m.triangles = data.proxy_tris[data.proxy_tri_first[index]:data.proxy_tri_first[index] + data.proxy_tri_count[index]];
             m.compute_normals ();
             m.pickable = false;
-            m.material.color = Gdk.RGBA () { red = 0.20f, green = 0.13f, blue = 0.09f, alpha = 1 };
+            m.material.color = Gdk.RGBA () { red = (float) hair_color.r, green = (float) hair_color.g, blue = (float) hair_color.b, alpha = 1 };
             m.material.roughness = 0.55;
             m.material.sheen = 0.5;
             m.material.double_sided = true;

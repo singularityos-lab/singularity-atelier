@@ -36,7 +36,7 @@ def read_target(path, count):
     return d
 
 
-PROXIES = ("hair/bob01", "hair/long01", "hair/short02", "hair/short04", "hair/ponytail01")
+PROXIES = ("hair/afro01", "hair/bob01", "hair/bob02", "hair/braid01", "hair/long01", "hair/ponytail01", "hair/short01", "hair/short02", "hair/short03", "hair/short04")
 BROWS = "eyebrows/eyebrow001"
 
 

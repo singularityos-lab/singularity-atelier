@@ -1264,6 +1264,7 @@ namespace Singularity.Apps.Atelier {
             b.set_member_name ("environment").add_string_value (g.environment);
             b.set_member_name ("auto_sew").add_boolean_value (g.auto_sew);
             b.set_member_name ("hair").add_string_value (g.avatar_hair);
+            b.set_member_name ("hair_color").add_string_value (g.avatar_hair_color);
             b.set_member_name ("avatar").begin_object ();
             foreach (var ak in sorted (g.avatar.keys)) b.set_member_name (ak).add_double_value (g.avatar[ak]);
             b.end_object ();
@@ -1320,6 +1321,7 @@ namespace Singularity.Apps.Atelier {
             g.environment = s (o, "environment", "studio");
             if (o.has_member ("auto_sew")) g.auto_sew = o.get_boolean_member ("auto_sew");
             g.avatar_hair = s (o, "hair", "auto");
+            g.avatar_hair_color = s (o, "hair_color", "#33211a");
             var av = obj (o, "avatar");
             if (av != null) foreach (var k in av.get_members ()) g.avatar[k] = av.get_double_member (k);
             var fa = arr (o, "fabrics");

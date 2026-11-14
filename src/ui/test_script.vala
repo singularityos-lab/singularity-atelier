@@ -341,6 +341,7 @@ namespace Singularity.Apps.Atelier {
                     win.project.garment.avatar_gender = a[1];
                     if (a.length > 2) win.project.garment.avatar_hair = a[2];
                     if (a.length > 3) win.project.garment.pose = a[3];
+                    if (a.length > 4) win.project.garment.avatar_hair_color = a[4];
                     win.garment_panel.avatar_updated ();
                     return 2500;
                 case "gpage":

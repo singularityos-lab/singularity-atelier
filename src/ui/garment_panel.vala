@@ -186,17 +186,22 @@ namespace Singularity.Apps.Atelier {
 
         private string hair () {
             string h = project.garment.avatar_hair;
-            if (h == "auto") return gender () == "male" ? "short02" : "bob01";
+            if (h == "auto") return gender () == "male" ? "short02" : "long01";
             return h;
         }
 
         private static string hair_label (string id) {
             switch (id) {
-                case "bob01": return _("Bob");
+                case "afro01": return _("Curly");
+                case "bob01": return _("Bob with a Fringe");
+                case "bob02": return _("Bob");
+                case "braid01": return _("Braid");
                 case "long01": return _("Long");
-                case "short02": return _("Short");
-                case "short04": return _("Cropped");
                 case "ponytail01": return _("Ponytail");
+                case "short01": return _("Short");
+                case "short02": return _("Short, Tousled");
+                case "short03": return _("Short, Side Part");
+                case "short04": return _("Cropped");
                 default: return _("None");
             }
         }
@@ -249,6 +254,30 @@ namespace Singularity.Apps.Atelier {
                 body_changed ();
             });
             avatar.add_row (hair_row);
+            string[] shade_names = { _("Black"), _("Dark Brown"), _("Brown"), _("Chestnut"), _("Auburn"), _("Red"), _("Blonde"), _("Platinum"), _("Grey"), _("White"), _("Blue"), _("Pink") };
+            string[] shade_values = { "#141110", "#33211a", "#5a3a26", "#7a4a2a", "#7d3320", "#a6401f", "#c9a25e", "#e6dcc4", "#8a8a8c", "#ecebe8", "#2c5fa8", "#d77aa6" };
+            string current_shade = shade_names[1];
+            for (int i = 0; i < shade_values.length; i++) if (shade_values[i] == project.garment.avatar_hair_color) current_shade = shade_names[i];
+            var start_color = Rgba.parse (project.garment.avatar_hair_color);
+            var hair_picker = new ColorPickerButton (Gdk.RGBA () { red = (float) start_color.r, green = (float) start_color.g, blue = (float) start_color.b, alpha = 1 });
+            var shade_row = new SelectionRow (_("Hair Colour"), shade_names, current_shade);
+            shade_row.selected.connect ((label) => {
+                for (int i = 0; i < shade_names.length; i++) if (shade_names[i] == label) project.garment.avatar_hair_color = shade_values[i];
+                var c = Rgba.parse (project.garment.avatar_hair_color);
+                hair_picker.color = Gdk.RGBA () { red = (float) c.r, green = (float) c.g, blue = (float) c.b, alpha = 1 };
+                project.touch ("garment");
+                body_changed ();
+            });
+            avatar.add_row (shade_row);
+            var custom_row = new ActionRow (_("Custom Hair Colour"));
+            hair_picker.valign = Align.CENTER;
+            hair_picker.color_changed.connect ((col) => {
+                project.garment.avatar_hair_color = Rgba (col.red, col.green, col.blue, 1).to_hex ();
+                project.touch ("garment");
+                body_changed ();
+            });
+            custom_row.add_suffix (hair_picker);
+            avatar.add_row (custom_row);
             page.append (avatar);
             measure_box = new Box (Orientation.VERTICAL, 0);
             page.append (measure_box);
@@ -631,7 +660,7 @@ namespace Singularity.Apps.Atelier {
             var d = dims ();
             string key = gender ();
             foreach (unowned string name in BodyDims.FIELDS) key += " %.0f".printf (d.field (name));
-            string full = key + " " + project.garment.pose + " " + hair ();
+            string full = key + " " + project.garment.pose + " " + hair () + " " + project.garment.avatar_hair_color;
             if (body != null && body_key == full) return;
             if (fits == null) fits = new HashTable<string, BodyShape> (str_hash, str_equal);
             BodyShape? shape = fits[key];
@@ -639,7 +668,7 @@ namespace Singularity.Apps.Atelier {
                 shape = BodyFit.fit (d, gender ());
                 fits[key] = shape;
             }
-            body = Body.build (shape, BodyPose.named (project.garment.pose), hair ());
+            body = Body.build (shape, BodyPose.named (project.garment.pose), hair (), Rgba.parse (project.garment.avatar_hair_color));
             body_key = full;
             if (sim != null) sim.set_body (body);
         }

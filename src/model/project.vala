@@ -10,6 +10,7 @@ namespace Singularity.Apps.Atelier {
         public string avatar_gender = "";
         public bool auto_sew = true;
         public string avatar_hair = "auto";
+        public string avatar_hair_color = "#33211a";
 
         public void ensure_fabrics () {
             if (fabrics.size == 0) {
