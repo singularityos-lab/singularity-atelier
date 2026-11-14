@@ -78,13 +78,16 @@ namespace Singularity.Apps.Atelier {
             return list;
         }
 
-        public const string[] MATERIALS = { "leather", "metal", "plastic", "paint", "fabric" };
+        public const string[] MATERIALS = { "paint", "metal", "chrome", "plastic", "rubber", "glass", "leather", "fabric" };
 
         public static string material_label (string id) {
             switch (id) {
                 case "leather": return _("Leather");
                 case "metal": return _("Brushed Metal");
                 case "paint": return _("Car Paint");
+                case "chrome": return _("Chrome");
+                case "rubber": return _("Rubber");
+                case "glass": return _("Glass");
                 case "fabric": return _("Fabric");
                 default: return _("Plastic");
             }
@@ -92,6 +95,7 @@ namespace Singularity.Apps.Atelier {
 
         public static void apply_material (Mesh m, string id) {
             m.material = id;
+            m.clearcoat = 0;
             switch (id) {
                 case "leather":
                     m.color = Rgba (0.42, 0.25, 0.14, 1);
@@ -104,9 +108,26 @@ namespace Singularity.Apps.Atelier {
                     m.metallic = 1;
                     break;
                 case "paint":
-                    m.color = Rgba (0.7, 0.08, 0.1, 1);
-                    m.roughness = 0.12;
-                    m.metallic = 0.3;
+                    m.color = Rgba (0.62, 0.05, 0.08, 1);
+                    m.roughness = 0.36;
+                    m.metallic = 0.55;
+                    m.clearcoat = 1;
+                    break;
+                case "chrome":
+                    m.color = Rgba (0.95, 0.95, 0.96, 1);
+                    m.roughness = 0.06;
+                    m.metallic = 1;
+                    break;
+                case "rubber":
+                    m.color = Rgba (0.06, 0.06, 0.065, 1);
+                    m.roughness = 0.85;
+                    m.metallic = 0;
+                    break;
+                case "glass":
+                    m.color = Rgba (0.1, 0.14, 0.17, 0.55);
+                    m.roughness = 0.05;
+                    m.metallic = 0;
+                    m.clearcoat = 1;
                     break;
                 case "fabric":
                     m.color = Rgba (0.3, 0.36, 0.48, 1);
@@ -151,6 +172,93 @@ namespace Singularity.Apps.Atelier {
             add_face ({ 2, 6, 7, 3 });
             add_face ({ 0, 4, 6, 2 });
             add_face ({ 1, 3, 7, 5 });
+        }
+
+        public void make_vehicle (VehicleTemplate t) {
+            clear ();
+            surfaces.clear ();
+            nurbs.clear ();
+            double ro = t.rear_overhang (), wb = t.wheelbase, len = t.length, g = t.ground, top = t.height;
+            double hw = (len * 0.39).clamp (1650, 2050) / 2;
+            bool long_roof = t.kind == "hatchback" || t.kind == "suv" || t.kind == "van";
+            bool truck = t.kind == "pickup";
+            double[] x = { 0, ro * 0.85, long_roof ? ro * 0.55 : ro + wb * (truck ? 0.5 : 0.22), ro + wb * (truck ? 0.68 : 0.55), ro + wb * 0.84, ro + wb + t.front_overhang * 0.4, len };
+            if (long_roof) x[1] = ro * 0.3;
+            double body = top - g;
+            double tail = long_roof ? 0.62 : (truck ? 0.5 : 0.56);
+            double[] belt = { tail - 0.06, tail, 0.6, 0.6, 0.58, 0.5, 0.4 };
+            double[] sill = { 0.16, 0.04, 0, 0, 0, 0.04, 0.14 };
+            double[] wide = { 0.84, 0.96, 1, 1, 1, 0.96, 0.82 };
+            int[,] low = new int[7, 3];
+            int[,] high = new int[7, 3];
+            int[,] roof = new int[7, 3];
+            for (int i = 0; i < 7; i++) {
+                for (int k = 0; k < 3; k++) {
+                    double z = (k - 1) * hw * wide[i];
+                    double crown = k == 1 ? 0.035 : 0;
+                    low[i, k] = cage.add_vertex (Vec3 (x[i] - len / 2, g + body * sill[i], z * 0.94));
+                    high[i, k] = i == 3 && k == 1 ? -1 : cage.add_vertex (Vec3 (x[i] - len / 2, g + body * (belt[i] + crown), z));
+                    roof[i, k] = -1;
+                }
+            }
+            double[] rx = { x[2] + (long_roof ? wb * 0.02 : wb * 0.12), x[3], x[4] - wb * 0.2 };
+            for (int c = 0; c < 3; c++) {
+                for (int k = 0; k < 3; k++) roof[c + 2, k] = cage.add_vertex (Vec3 (rx[c] - len / 2, top + (k == 1 ? body * 0.02 : 0) - (c == 1 ? 0 : body * 0.015), (k - 1) * hw * 0.74));
+            }
+            for (int i = 0; i < 6; i++) {
+                for (int k = 0; k < 2; k++) {
+                    add_face ({ low[i, k], low[i + 1, k], low[i + 1, k + 1], low[i, k + 1] });
+                    if (i == 2 || i == 3) add_face ({ roof[i, k], roof[i, k + 1], roof[i + 1, k + 1], roof[i + 1, k] });
+                    else add_face ({ high[i, k], high[i, k + 1], high[i + 1, k + 1], high[i + 1, k] });
+                }
+                add_face ({ low[i, 2], low[i + 1, 2], high[i + 1, 2], high[i, 2] });
+                add_face ({ low[i, 0], high[i, 0], high[i + 1, 0], low[i + 1, 0] });
+                if (i == 2 || i == 3) {
+                    add_face ({ high[i, 2], high[i + 1, 2], roof[i + 1, 2], roof[i, 2] });
+                    add_face ({ high[i, 0], roof[i, 0], roof[i + 1, 0], high[i + 1, 0] });
+                }
+            }
+            for (int k = 0; k < 2; k++) {
+                add_face ({ low[0, k], low[0, k + 1], high[0, k + 1], high[0, k] });
+                add_face ({ low[6, k], high[6, k], high[6, k + 1], low[6, k + 1] });
+                add_face ({ high[2, k], high[2, k + 1], roof[2, k + 1], roof[2, k] });
+                add_face ({ high[4, k], roof[4, k], roof[4, k + 1], high[4, k + 1] });
+            }
+            levels = 3;
+            material = "paint";
+            double[] axle = { ro, ro + wb };
+            foreach (double ax in axle) {
+                for (int side = -1; side <= 1; side += 2) {
+                    var w = new Mesh ();
+                    w.name = "wheel";
+                    int seg = 40;
+                    double r = t.wheel / 2, half = 118, zc = side * (hw - 185);
+                    double[] radius = { r * 0.55, r, r, r * 0.55 };
+                    double[] zo = { -half * 0.6, -half, half, half * 0.6 };
+                    for (int ring = 0; ring < 4; ring++) {
+                        for (int q = 0; q < seg; q++) {
+                            double a = 2 * Math.PI * q / seg;
+                            w.add_vertex (Vec3 (ax - len / 2 + radius[ring] * Math.cos (a), r + radius[ring] * Math.sin (a), zc + zo[ring]));
+                        }
+                    }
+                    for (int ring = 0; ring < 3; ring++) {
+                        for (int q = 0; q < seg; q++) {
+                            int a0 = ring * seg + q, a1 = ring * seg + (q + 1) % seg;
+                            w.add_triangle (a0, a1, a0 + seg);
+                            w.add_triangle (a1, a1 + seg, a0 + seg);
+                        }
+                    }
+                    int hub0 = w.add_vertex (Vec3 (ax - len / 2, r, zc - half * 0.6));
+                    int hub1 = w.add_vertex (Vec3 (ax - len / 2, r, zc + half * 0.6));
+                    for (int q = 0; q < seg; q++) {
+                        w.add_triangle (hub0, (q + 1) % seg, q);
+                        w.add_triangle (hub1, 3 * seg + q, 3 * seg + (q + 1) % seg);
+                    }
+                    w.compute_normals ();
+                    apply_material (w, "rubber");
+                    surfaces.add (w);
+                }
+            }
         }
 
         public void make_cylinder (double radius, double height, int segments) {

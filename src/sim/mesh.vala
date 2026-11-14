@@ -11,6 +11,7 @@ namespace Singularity.Apps.Atelier {
         public Rgba color = Rgba (0.8, 0.8, 0.8, 1);
         public double roughness = 0.7;
         public double metallic = 0;
+        public double clearcoat = 0;
         public string material = "";
         public bool visible = true;
         public bool double_sided = true;
@@ -120,6 +121,7 @@ namespace Singularity.Apps.Atelier {
             m.material.color = Gdk.RGBA () { red = (float) color.r, green = (float) color.g, blue = (float) color.b, alpha = (float) color.a };
             m.material.roughness = roughness;
             m.material.metallic = metallic;
+            m.material.clearcoat = clearcoat;
             m.material.double_sided = double_sided;
             if (triangles.size == 0) m.material.shading = Scene.Shading.FLAT;
             return m;
@@ -162,6 +164,7 @@ namespace Singularity.Apps.Atelier {
             m.color = color;
             m.roughness = roughness;
             m.metallic = metallic;
+            m.clearcoat = clearcoat;
             m.material = material;
             m.visible = visible;
             m.double_sided = double_sided;

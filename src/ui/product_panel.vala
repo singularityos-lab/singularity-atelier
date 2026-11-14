@@ -9,6 +9,8 @@ namespace Singularity.Apps.Atelier {
         private View3D view;
         private bool syncing;
         private int selected_face = -1;
+        private bool dragging;
+        private Scene.Vec3 drag_last;
         private ActionRow selection_row;
         private SpinRow amount;
         private SpinRow move_x;
@@ -48,7 +50,22 @@ namespace Singularity.Apps.Atelier {
             }
             append (shape);
 
-            var ops = new PreferencesGroup (_("Edit the Cage"), _("Click a face in the view to select it"));
+            var car = new PreferencesGroup (_("Vehicle Body"), _("A body with the proportions of a package, ready to reshape."));
+            string[] kinds = {};
+            foreach (unowned string k in VehicleTemplate.KINDS) kinds += VehicleTemplate.label (k);
+            var kind_row = new SelectionRow (_("Package"), kinds, kinds[0]);
+            car.add_row (kind_row);
+            action_row (car, _("Body and Wheels"), _("Replaces the current cage and surfaces"), _("Create"), () => {
+                string chosen = VehicleTemplate.KINDS[0];
+                foreach (unowned string k in VehicleTemplate.KINDS) if (VehicleTemplate.label (k) == kind_row.current_value) chosen = k;
+                editor.vehicle (chosen);
+                selected_face = -1;
+                view.reset_camera ();
+                return true;
+            });
+            append (car);
+
+            var ops = new PreferencesGroup (_("Edit the Cage"), _("Click a face to select it, then drag it. Shift moves it freely."));
             selection_row = new ActionRow (_("No Face Selected"));
             ops.add_row (selection_row);
             amount = new SpinRow (_("Amount"), _("In millimetres"), -500, 500, 1, 30);
@@ -138,6 +155,34 @@ namespace Singularity.Apps.Atelier {
             append (surf);
 
             view.pick.connect (on_pick);
+            view.tool_pressed.connect ((x, y, state) => {
+                if (!get_mapped () || view.plane_mode != "" || selected_face < 0 || selected_face >= model.faces.size) return false;
+                Scene.Hit hit;
+                if (!view.pick_at (x, y, out hit) || nearest_face (Vec3 (hit.point.x, hit.point.y, hit.point.z)) != selected_face) return false;
+                drag_last = hit.point;
+                dragging = true;
+                editor.begin_drag ();
+                return true;
+            });
+            view.tool_dragged.connect ((x, y, state) => {
+                if (!dragging) return;
+                Scene.Vec3 r, u, f, at;
+                view.camera.basis (out r, out u, out f);
+                if (!view.ray (x, y).plane (drag_last, f, out at)) return;
+                var delta = Vec3 (at.x - drag_last.x, at.y - drag_last.y, at.z - drag_last.z);
+                if ((state & Gdk.ModifierType.SHIFT_MASK) == 0) {
+                    var n = model.face_normal (selected_face);
+                    delta = n.scale (delta.dot (n));
+                }
+                editor.drag_face (selected_face, delta);
+                drag_last = Scene.Vec3 (drag_last.x + delta.x, drag_last.y + delta.y, drag_last.z + delta.z);
+                view.set_meshes (scene ());
+            });
+            view.tool_released.connect ((x, y) => {
+                if (!dragging) return;
+                dragging = false;
+                editor.end_drag ();
+            });
             view.plane_point.connect (on_plane_point);
             view.plane_stroke_done.connect (() => {
                 if (editor.end_stroke ()) refresh ();
@@ -203,17 +248,23 @@ namespace Singularity.Apps.Atelier {
             if (triangle >= 0 && triangle * 3 + 2 < m.triangles.size) {
                 at = m.vertices[m.triangles[triangle * 3]].add (m.vertices[m.triangles[triangle * 3 + 1]]).add (m.vertices[m.triangles[triangle * 3 + 2]]).scale (1.0 / 3);
             }
+            selected_face = nearest_face (at);
+            refresh ();
+        }
+
+        private int nearest_face (Vec3 at) {
             double best = double.INFINITY;
+            int found = -1;
             for (int f = 0; f < model.faces.size; f++) {
                 var c = model.face_center (f);
                 var n = model.face_normal (f);
                 double d = c.distance (at) - at.sub (c).dot (n) * 0.5;
                 if (d < best) {
                     best = d;
-                    selected_face = f;
+                    found = f;
                 }
             }
-            refresh ();
+            return found;
         }
 
         private void on_plane_point (double a, double b, bool first) {

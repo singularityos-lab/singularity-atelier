@@ -148,6 +148,7 @@ namespace Singularity.Apps.Atelier {
                 case "automotive":
                     p.flats.add_all (Flats.build (trade == "automotive" ? "sneaker" : "backpack"));
                     p.techpack = TechPack.sample ();
+                    if (trade == "automotive") p.product.make_vehicle (VehicleTemplate.preset ("sedan"));
                     break;
                 default:
                     p.flats.add_all (Flats.build ("tshirt"));

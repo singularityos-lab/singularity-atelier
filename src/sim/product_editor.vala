@@ -47,6 +47,25 @@ namespace Singularity.Apps.Atelier {
             edited ();
         }
 
+        public void vehicle (string kind) {
+            history.checkpoint ();
+            model.make_vehicle (VehicleTemplate.preset (kind));
+            edited ();
+        }
+
+        public void begin_drag () {
+            history.checkpoint ();
+        }
+
+        public void drag_face (int face, Vec3 delta) {
+            if (!face_exists (face)) return;
+            model.move_face (face, delta);
+        }
+
+        public void end_drag () {
+            edited ();
+        }
+
         public bool set_levels (int levels) {
             if (levels == model.levels) return false;
             history.checkpoint ();
@@ -59,7 +78,7 @@ namespace Singularity.Apps.Atelier {
             if (id == model.material || !(id in ProductModel.MATERIALS)) return false;
             history.checkpoint ();
             model.material = id;
-            foreach (var mesh in model.surfaces) ProductModel.apply_material (mesh, id);
+            foreach (var mesh in model.surfaces) if (mesh.name != "wheel") ProductModel.apply_material (mesh, id);
             edited ();
             return true;
         }

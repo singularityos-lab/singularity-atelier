@@ -312,6 +312,13 @@ namespace Singularity.Apps.Atelier {
                 case "garment":
                     win.show_workspace ("3d");
                     return 800;
+                case "car":
+                    win.project.product.make_vehicle (VehicleTemplate.preset (a[1]));
+                    if (a.length > 2) win.project.product.material = a[2];
+                    win.show_3d_mode ("product");
+                    win.product_panel.refresh ();
+                    win.view3d.reset_camera ();
+                    return 900;
                 case "block":
                     win.garment_panel.use_block (a[1]);
                     return 900;
