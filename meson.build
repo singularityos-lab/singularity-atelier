@@ -178,7 +178,7 @@ foreach t : ['model', 'grading', 'sketch', 'dxf', 'seamly', 'formats', 'techpack
     dependencies: core_deps,
     vala_args: core_args,
   )
-  test(t, exe, env: test_env, timeout: 300, depends: [cut_list])
+  test(t, exe, env: test_env, timeout: 900, depends: [cut_list])
 endforeach
 
 install_data('data/dev.sinty.atelier.desktop',

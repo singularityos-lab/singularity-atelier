@@ -184,6 +184,23 @@ namespace Singularity.Apps.Atelier {
             return g == "male" ? "male" : "female";
         }
 
+        private string hair () {
+            string h = project.garment.avatar_hair;
+            if (h == "auto") return gender () == "male" ? "short02" : "bob01";
+            return h;
+        }
+
+        private static string hair_label (string id) {
+            switch (id) {
+                case "bob01": return _("Bob");
+                case "long01": return _("Long");
+                case "short02": return _("Short");
+                case "short04": return _("Cropped");
+                case "ponytail01": return _("Ponytail");
+                default: return _("None");
+            }
+        }
+
         private BodyDims dims () {
             var d = BodyDims.from_table (project.pattern.table, size);
             foreach (var e in project.garment.avatar.entries) d.set_field (e.key, e.value);
@@ -221,6 +238,17 @@ namespace Singularity.Apps.Atelier {
                 body_changed ();
             });
             avatar.add_row (pose_row);
+            string[] hair_ids = { "none" };
+            foreach (unowned string h in Body.hair_styles ()) hair_ids += h;
+            string[] hair_labels = {};
+            foreach (unowned string h in hair_ids) hair_labels += hair_label (h);
+            var hair_row = new SelectionRow (_("Hair"), hair_labels, hair_label (hair ()));
+            hair_row.selected.connect ((label) => {
+                foreach (unowned string h in hair_ids) if (hair_label (h) == label) project.garment.avatar_hair = h;
+                project.touch ("garment");
+                body_changed ();
+            });
+            avatar.add_row (hair_row);
             page.append (avatar);
             measure_box = new Box (Orientation.VERTICAL, 0);
             page.append (measure_box);
@@ -603,7 +631,7 @@ namespace Singularity.Apps.Atelier {
             var d = dims ();
             string key = gender ();
             foreach (unowned string name in BodyDims.FIELDS) key += " %.0f".printf (d.field (name));
-            string full = key + " " + project.garment.pose;
+            string full = key + " " + project.garment.pose + " " + hair ();
             if (body != null && body_key == full) return;
             if (fits == null) fits = new HashTable<string, BodyShape> (str_hash, str_equal);
             BodyShape? shape = fits[key];
@@ -611,7 +639,7 @@ namespace Singularity.Apps.Atelier {
                 shape = BodyFit.fit (d, gender ());
                 fits[key] = shape;
             }
-            body = Body.build (shape, BodyPose.named (project.garment.pose));
+            body = Body.build (shape, BodyPose.named (project.garment.pose), hair ());
             body_key = full;
             if (sim != null) sim.set_body (body);
         }
@@ -650,7 +678,10 @@ namespace Singularity.Apps.Atelier {
 
         private void show_scene () {
             var list = new Gee.ArrayList<Scene.Mesh> ();
-            if (body != null) list.add (body.mesh);
+            if (body != null) {
+                list.add (body.mesh);
+                foreach (var extra in body.extras) list.add (extra);
+            }
             if (sim != null) foreach (var p in sim.pieces) list.add (p.mesh);
             view.set_meshes (new Gee.ArrayList<Mesh> ());
             view.set_native (list);
@@ -741,6 +772,11 @@ namespace Singularity.Apps.Atelier {
             rebuild_seam_box ();
             status_row.title = _("Ready");
             status_row.subtitle = _("Not simulated yet");
+        }
+
+        public void avatar_updated () {
+            ensure_body ();
+            show_scene ();
         }
 
         public void fabrics_updated () {

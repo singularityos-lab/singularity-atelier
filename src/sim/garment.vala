@@ -129,7 +129,7 @@ namespace Singularity.Apps.Atelier {
 
         private void build_collider () {
             var m = body.mesh;
-            sdf = AtCore.Sdf.build (m.positions, m.vertex_count, m.triangles, m.triangles.length, 8, 70);
+            sdf = AtCore.Sdf.build (m.positions, body.solid_vertices, body.solid_triangles, body.solid_triangles.length, 8, 70);
             cloth.set_collider (sdf, (float) (2 + spacing * 0.13));
         }
 
@@ -764,6 +764,7 @@ namespace Singularity.Apps.Atelier {
         public Gee.ArrayList<Mesh> export_meshes () {
             var list = new Gee.ArrayList<Mesh> ();
             list.add (Mesh.from_scene (body.mesh));
+            foreach (var extra in body.extras) list.add (Mesh.from_scene (extra));
             foreach (var p in pieces) list.add (Mesh.from_scene (p.mesh));
             return list;
         }

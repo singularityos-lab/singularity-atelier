@@ -41,7 +41,7 @@ namespace Singularity.Apps.Atelier {
         }
 
         public void tshirt_pattern (Pattern p) {
-            p.increments.add (new Increment ("ease", "4"));
+            p.increments.add (new Increment ("ease", "9"));
             p.increments.add (new Increment ("armhole", "bust_circ / 8 + 11.5"));
             p.increments.add (new Increment ("length", "back_waist_length + waist_to_hip + 4"));
 
@@ -218,9 +218,9 @@ namespace Singularity.Apps.Atelier {
 
         public void trousers_pattern (Project project) {
             var p = project.pattern;
-            p.increments.add (new Increment ("rise", "crotch_depth + 1.5"));
+            p.increments.add (new Increment ("rise", "crotch_depth + 3"));
             p.increments.add (new Increment ("forkf", "hip_circ / 16 + 0.5"));
-            p.increments.add (new Increment ("forkb", "hip_circ / 9"));
+            p.increments.add (new Increment ("forkb", "hip_circ / 8 + 2"));
             p.increments.add (new Increment ("kneew", "knee_circ / 4 + 3"));
             p.increments.add (new Increment ("hem", "ankle_circ / 2 + 7"));
             var front = trouser_leg (p, _("Front"), "", "0", "#forkf", "0", "leg-front");

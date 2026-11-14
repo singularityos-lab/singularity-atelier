@@ -115,7 +115,7 @@ void test_tshirt_piece () {
     }
     var front = r.pieces[0];
     var b = front.bounds ();
-    double expected_w = (88.0 / 4 + 1) * 10;
+    double expected_w = (88.0 / 4 + 9.0 / 4) * 10;
     check (b.w > expected_w && b.w < expected_w + 40, "front width follows bust %f".printf (b.w));
     check (front.notches.size == 1, "front has a notch");
     var big = p.evaluate ("46");

@@ -75,10 +75,22 @@ namespace Singularity.Apps.Atelier {
             var m = new Mesh ();
             m.name = src.name;
             int n = src.vertex_count;
-            for (int i = 0; i < n; i++) m.vertices.add (Vec3 (src.positions[i * 3], src.positions[i * 3 + 1], src.positions[i * 3 + 2]));
-            if (src.normals.length == n * 3) for (int i = 0; i < n; i++) m.normals.add (Vec3 (src.normals[i * 3], src.normals[i * 3 + 1], src.normals[i * 3 + 2]));
-            if (src.uvs.length == n * 2) for (int i = 0; i < n * 2; i++) m.uvs.add (src.uvs[i]);
-            for (int i = 0; i < src.triangles.length; i++) m.triangles.add ((int) src.triangles[i]);
+            var remap = new int[n];
+            for (int i = 0; i < n; i++) remap[i] = -1;
+            bool has_normals = src.normals.length == n * 3, has_uvs = src.uvs.length == n * 2;
+            for (int i = 0; i < src.triangles.length; i++) {
+                int v = (int) src.triangles[i];
+                if (remap[v] < 0) {
+                    remap[v] = m.vertices.size;
+                    m.vertices.add (Vec3 (src.positions[v * 3], src.positions[v * 3 + 1], src.positions[v * 3 + 2]));
+                    if (has_normals) m.normals.add (Vec3 (src.normals[v * 3], src.normals[v * 3 + 1], src.normals[v * 3 + 2]));
+                    if (has_uvs) {
+                        m.uvs.add (src.uvs[v * 2]);
+                        m.uvs.add (src.uvs[v * 2 + 1]);
+                    }
+                }
+                m.triangles.add (remap[v]);
+            }
             var c = src.material.color;
             m.color = Rgba (c.red, c.green, c.blue, c.alpha);
             m.roughness = src.material.roughness;

@@ -9,6 +9,7 @@ namespace Singularity.Apps.Atelier {
         public string pose = "a-pose";
         public string avatar_gender = "";
         public bool auto_sew = true;
+        public string avatar_hair = "auto";
 
         public void ensure_fabrics () {
             if (fabrics.size == 0) {
@@ -153,6 +154,7 @@ namespace Singularity.Apps.Atelier {
                 default:
                     p.flats.add_all (Flats.build ("tshirt"));
                     Samples.tshirt_pattern (p.pattern);
+                    p.garment.fabric_preset = "jersey";
                     p.techpack = TechPack.sample ();
                     break;
             }

@@ -753,6 +753,7 @@ void at_cloth_step (AtCloth *c, float dt, int substeps) {
         solve_seams (c, 1.6f);
         solve_triangles (c, inv_h2);
         solve_bends (c, inv_h2);
+        solve_seams (c, 0.35f);
         if (s % 3 == 0) collide_self (c);
         collide_body (c);
         for (int i = 0; i < c->n; i++) {
