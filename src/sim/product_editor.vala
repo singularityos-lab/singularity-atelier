@@ -53,6 +53,18 @@ namespace Singularity.Apps.Atelier {
             edited ();
         }
 
+        public bool insert_loop (int a, int b) {
+            history.checkpoint ();
+            if (!model.insert_loop (a, b)) return false;
+            edited ();
+            return true;
+        }
+
+        public void drag_vertices (int[] ids, Vec3 delta, bool symmetric) {
+            if (symmetric) model.move_symmetric (ids, delta);
+            else model.move_vertices (ids, delta);
+        }
+
         public void begin_drag () {
             history.checkpoint ();
         }

@@ -1420,6 +1420,7 @@ namespace Singularity.Apps.Atelier {
             b.begin_object ();
             b.set_member_name ("levels").add_int_value (pm.levels);
             b.set_member_name ("material").add_string_value (pm.material);
+            b.set_member_name ("vehicle").add_string_value (pm.vehicle);
             b.set_member_name ("vertices").begin_array ();
             foreach (var v in pm.cage.vertices) add_vec3 (b, v);
             b.end_array ();
@@ -1584,6 +1585,7 @@ namespace Singularity.Apps.Atelier {
             var pm = new ProductModel ();
             pm.levels = ((int) n (o, "levels", 2)).clamp (0, 4);
             pm.material = s (o, "material", "plastic");
+            pm.vehicle = s (o, "vehicle");
             pm.cage.vertices.add_all (read_vectors (o, "vertices"));
             var fa = arr (o, "faces");
             if (fa != null) {

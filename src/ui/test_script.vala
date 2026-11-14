@@ -334,6 +334,21 @@ namespace Singularity.Apps.Atelier {
                     });
                     return total + 300;
                 }
+                case "loop": {
+                    var pm = win.project.product;
+                    var list = pm.edges ();
+                    int k = int.parse (a[1]);
+                    if (k < list.length[0]) pm.insert_loop (list[k, 0], list[k, 1]);
+                    win.product_panel.refresh ();
+                    return 500;
+                }
+                case "pull": {
+                    var pm = win.project.product;
+                    int[] ids = { int.parse (a[1]) };
+                    pm.move_symmetric (ids, Vec3 (double.parse (a[2]), double.parse (a[3]), double.parse (a[4])));
+                    win.product_panel.refresh ();
+                    return 500;
+                }
                 case "block":
                     win.garment_panel.use_block (a[1]);
                     return 900;

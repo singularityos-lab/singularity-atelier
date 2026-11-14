@@ -10,6 +10,12 @@ namespace Singularity.Apps.Atelier {
         private bool syncing;
         private int selected_face = -1;
         private bool dragging;
+        private string component = "face";
+        private int selected_vertex = -1;
+        private int edge_a = -1;
+        private int edge_b = -1;
+        private bool symmetry = true;
+        private bool show_package = true;
         private Scene.Vec3 drag_last;
         private ActionRow selection_row;
         private SpinRow amount;
@@ -65,7 +71,42 @@ namespace Singularity.Apps.Atelier {
             });
             append (car);
 
-            var ops = new PreferencesGroup (_("Edit the Cage"), _("Click a face to select it, then drag it. Shift moves it freely."));
+            var views = new PreferencesGroup (_("View"));
+            string[] view_ids = { "perspective", "side", "front", "rear", "top" };
+            string[] view_labels = { _("Perspective"), _("Side"), _("Front"), _("Rear"), _("Top") };
+            var view_row = new SelectionRow (_("Camera"), view_labels, view_labels[0]);
+            view_row.selected.connect ((label) => {
+                for (int i = 0; i < view_ids.length; i++) if (view_labels[i] == label) look (view_ids[i]);
+            });
+            views.add_row (view_row);
+            var package_row = new SwitchRow (_("Package Outline"), _("Side profile, wheels and axle lines of the chosen package"));
+            package_row.active = show_package;
+            package_row.notify["active"].connect (() => {
+                show_package = package_row.active;
+                view.queue_render ();
+            });
+            views.add_row (package_row);
+            append (views);
+
+            var ops = new PreferencesGroup (_("Edit the Cage"), _("Pick a component, then drag it in the view. Faces move along their normal, Shift moves them freely."));
+            string[] comp_ids = { "face", "edge", "vertex" };
+            string[] comp_labels = { _("Faces"), _("Edges"), _("Points") };
+            var comp_row = new SelectionRow (_("Select"), comp_labels, comp_labels[0]);
+            comp_row.selected.connect ((label) => {
+                for (int i = 0; i < comp_ids.length; i++) if (comp_labels[i] == label) component = comp_ids[i];
+                view.queue_render ();
+            });
+            ops.add_row (comp_row);
+            var sym_row = new SwitchRow (_("Symmetry"), _("Mirrors every move across the centre plane"));
+            sym_row.active = symmetry;
+            sym_row.notify["active"].connect (() => symmetry = sym_row.active);
+            ops.add_row (sym_row);
+            action_row (ops, _("Insert an Edge Loop"), _("Cuts the ring of faces across the selected edge"), _("Insert"), () => {
+                if (edge_a < 0 || !editor.insert_loop (edge_a, edge_b)) return false;
+                edge_a = -1;
+                edge_b = -1;
+                return true;
+            });
             selection_row = new ActionRow (_("No Face Selected"));
             ops.add_row (selection_row);
             amount = new SpinRow (_("Amount"), _("In millimetres"), -500, 500, 1, 30);
@@ -155,13 +196,43 @@ namespace Singularity.Apps.Atelier {
             append (surf);
 
             view.pick.connect (on_pick);
+            view.overlay.connect ((o) => {
+                if (!get_mapped () || model.is_empty ()) return;
+                var hot = Gdk.RGBA () { red = 1.0f, green = 0.6f, blue = 0.1f, alpha = 1 };
+                if (component == "vertex" && selected_vertex >= 0 && selected_vertex < model.cage.vertices.size) {
+                    var v = model.cage.vertices[selected_vertex];
+                    o.point (Scene.Vec3 (v.x, v.y, v.z), hot, 11);
+                }
+                if (component == "edge" && edge_a >= 0 && edge_a < model.cage.vertices.size && edge_b < model.cage.vertices.size) {
+                    var a2 = model.cage.vertices[edge_a], b2 = model.cage.vertices[edge_b];
+                    o.line (Scene.Vec3 (a2.x, a2.y, a2.z), Scene.Vec3 (b2.x, b2.y, b2.z), hot, 3.5);
+                }
+                if (show_package && model.vehicle != "") draw_package (o);
+            });
             view.tool_pressed.connect ((x, y, state) => {
-                if (!get_mapped () || view.plane_mode != "" || selected_face < 0 || selected_face >= model.faces.size) return false;
+                if (!get_mapped () || view.plane_mode != "" || model.is_empty ()) return false;
                 Scene.Hit hit;
-                if (!view.pick_at (x, y, out hit) || nearest_face (Vec3 (hit.point.x, hit.point.y, hit.point.z)) != selected_face) return false;
-                drag_last = hit.point;
+                if (component == "vertex") {
+                    int found = vertex_at (x, y);
+                    if (found < 0) return false;
+                    selected_vertex = found;
+                    var v = model.cage.vertices[found];
+                    drag_last = Scene.Vec3 (v.x, v.y, v.z);
+                } else if (component == "edge") {
+                    int ea, eb;
+                    if (!edge_at (x, y, out ea, out eb)) return false;
+                    edge_a = ea;
+                    edge_b = eb;
+                    var m = model.cage.vertices[ea].lerp (model.cage.vertices[eb], 0.5);
+                    drag_last = Scene.Vec3 (m.x, m.y, m.z);
+                } else {
+                    if (selected_face < 0 || selected_face >= model.faces.size) return false;
+                    if (!view.pick_at (x, y, out hit) || nearest_face (Vec3 (hit.point.x, hit.point.y, hit.point.z)) != selected_face) return false;
+                    drag_last = hit.point;
+                }
                 dragging = true;
                 editor.begin_drag ();
+                refresh ();
                 return true;
             });
             view.tool_dragged.connect ((x, y, state) => {
@@ -170,11 +241,19 @@ namespace Singularity.Apps.Atelier {
                 view.camera.basis (out r, out u, out f);
                 if (!view.ray (x, y).plane (drag_last, f, out at)) return;
                 var delta = Vec3 (at.x - drag_last.x, at.y - drag_last.y, at.z - drag_last.z);
-                if ((state & Gdk.ModifierType.SHIFT_MASK) == 0) {
-                    var n = model.face_normal (selected_face);
-                    delta = n.scale (delta.dot (n));
+                int[] ids = {};
+                if (component == "vertex") ids += selected_vertex;
+                else if (component == "edge") {
+                    ids += edge_a;
+                    ids += edge_b;
+                } else {
+                    if ((state & Gdk.ModifierType.SHIFT_MASK) == 0) {
+                        var n = model.face_normal (selected_face);
+                        delta = n.scale (delta.dot (n));
+                    }
+                    foreach (var i in model.faces[selected_face]) ids += i;
                 }
-                editor.drag_face (selected_face, delta);
+                editor.drag_vertices (ids, delta, symmetry);
                 drag_last = Scene.Vec3 (drag_last.x + delta.x, drag_last.y + delta.y, drag_last.z + delta.z);
                 view.set_meshes (scene ());
             });
@@ -250,6 +329,85 @@ namespace Singularity.Apps.Atelier {
             }
             selected_face = nearest_face (at);
             refresh ();
+        }
+
+        private void draw_package (Scene.Overlay o) {
+            var t = VehicleTemplate.preset (model.vehicle);
+            var ink = Gdk.RGBA () { red = 0.15f, green = 0.3f, blue = 0.55f, alpha = 0.55f };
+            Singularity.Vector.PathData[] paths = { t.body (), t.wheels (), t.guides (), t.ground_line () };
+            foreach (var path in paths) {
+                foreach (var poly in path.flatten (2)) {
+                    Scene.Vec3[] pts = {};
+                    foreach (var q in poly.pts) pts += Scene.Vec3 (t.length / 2 - q.x, -q.y, 0);
+                    o.polyline (pts, ink, 1.2, false, poly.closed);
+                }
+            }
+        }
+
+        private int vertex_at (double x, double y) {
+            int found = -1;
+            double best = 14;
+            for (int i = 0; i < model.cage.vertices.size; i++) {
+                var v = model.cage.vertices[i];
+                double sx, sy;
+                if (!view.project (Scene.Vec3 (v.x, v.y, v.z), out sx, out sy)) continue;
+                double d = Math.hypot (sx - x, sy - y);
+                if (d < best) {
+                    best = d;
+                    found = i;
+                }
+            }
+            return found;
+        }
+
+        private bool edge_at (double x, double y, out int ea, out int eb) {
+            ea = -1;
+            eb = -1;
+            double best = 10;
+            var list = model.edges ();
+            for (int i = 0; i < list.length[0]; i++) {
+                var a = model.cage.vertices[list[i, 0]], b = model.cage.vertices[list[i, 1]];
+                double ax, ay, bx, by;
+                if (!view.project (Scene.Vec3 (a.x, a.y, a.z), out ax, out ay)) continue;
+                if (!view.project (Scene.Vec3 (b.x, b.y, b.z), out bx, out by)) continue;
+                double d = Singularity.Vector.PathData.segment_distance (Singularity.Vector.Point (ax, ay), Singularity.Vector.Point (bx, by), x, y);
+                if (d < best) {
+                    best = d;
+                    ea = list[i, 0];
+                    eb = list[i, 1];
+                }
+            }
+            return ea >= 0;
+        }
+
+        private void look (string where) {
+            var c = view.camera.copy ();
+            c.fov = where == "perspective" ? 32 : 3;
+            switch (where) {
+                case "side":
+                    c.yaw = 0;
+                    c.pitch = 0;
+                    break;
+                case "front":
+                    c.yaw = Math.PI / 2;
+                    c.pitch = 0;
+                    break;
+                case "rear":
+                    c.yaw = -Math.PI / 2;
+                    c.pitch = 0;
+                    break;
+                case "top":
+                    c.yaw = 0;
+                    c.pitch = 1.5;
+                    break;
+                default:
+                    c.yaw = 0.7;
+                    c.pitch = 0.25;
+                    break;
+            }
+            view.max_distance = 400000;
+            view.camera = c;
+            view.frame_all ();
         }
 
         private int nearest_face (Vec3 at) {

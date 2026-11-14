@@ -68,6 +68,7 @@ namespace Singularity.Apps.Atelier {
         public Gee.HashSet<string> creases = new Gee.HashSet<string> ();
         public int levels = 2;
         public string material = "plastic";
+        public string vehicle = "";
         public Gee.ArrayList<PlaneCurve> sketches = new Gee.ArrayList<PlaneCurve> ();
         public Gee.ArrayList<Mesh> surfaces = new Gee.ArrayList<Mesh> ();
         public Gee.ArrayList<NurbsSurface> nurbs = new Gee.ArrayList<NurbsSurface> ();
@@ -176,6 +177,7 @@ namespace Singularity.Apps.Atelier {
 
         public void make_vehicle (VehicleTemplate t) {
             clear ();
+            vehicle = t.kind;
             surfaces.clear ();
             nurbs.clear ();
             double ro = t.rear_overhang (), wb = t.wheelbase, len = t.length, g = t.ground, top = t.height;
@@ -329,6 +331,135 @@ namespace Singularity.Apps.Atelier {
 
         public void move_vertices (int[] ids, Vec3 delta) {
             foreach (var i in ids) if (i >= 0 && i < cage.vertices.size) cage.vertices[i] = cage.vertices[i].add (delta);
+        }
+
+        public int mirror_vertex (int i) {
+            var v = cage.vertices[i];
+            for (int k = 0; k < cage.vertices.size; k++) {
+                var o = cage.vertices[k];
+                if ((o.x - v.x).abs () < 0.5 && (o.y - v.y).abs () < 0.5 && (o.z + v.z).abs () < 0.5) return k;
+            }
+            return -1;
+        }
+
+        public void move_symmetric (int[] ids, Vec3 delta) {
+            var partners = new int[ids.length];
+            for (int n = 0; n < ids.length; n++) partners[n] = mirror_vertex (ids[n]);
+            for (int n = 0; n < ids.length; n++) {
+                int i = ids[n], m = partners[n];
+                var d = m == i ? Vec3 (delta.x, delta.y, 0) : delta;
+                cage.vertices[i] = cage.vertices[i].add (d);
+                if (m < 0 || m == i || m in ids) continue;
+                cage.vertices[m] = cage.vertices[m].add (Vec3 (delta.x, delta.y, -delta.z));
+            }
+        }
+
+        public int[,] edges () {
+            var seen = new Gee.HashSet<string> ();
+            int[] flat = {};
+            foreach (var f in faces) {
+                for (int i = 0; i < f.size; i++) {
+                    int a = f[i], b = f[(i + 1) % f.size];
+                    if (!seen.add (edge_key (a, b))) continue;
+                    flat += a;
+                    flat += b;
+                }
+            }
+            var o = new int[flat.length / 2, 2];
+            for (int i = 0; i < flat.length / 2; i++) {
+                o[i, 0] = flat[i * 2];
+                o[i, 1] = flat[i * 2 + 1];
+            }
+            return o;
+        }
+
+        private int face_with_edge (int a, int b, int except) {
+            for (int f = 0; f < faces.size; f++) {
+                if (f == except || faces[f].size != 4) continue;
+                var q = faces[f];
+                for (int i = 0; i < 4; i++) if ((q[i] == a && q[(i + 1) % 4] == b) || (q[i] == b && q[(i + 1) % 4] == a)) return f;
+            }
+            return -1;
+        }
+
+        public bool insert_loop (int a, int b) {
+            var ring = new Gee.ArrayList<int> ();
+            var visited = new Gee.HashSet<int> ();
+            for (int dir = 0; dir < 2; dir++) {
+                int ea = a, eb = b;
+                int f = face_with_edge (a, b, dir == 0 || ring.size == 0 ? -1 : ring[0]);
+                while (f >= 0 && visited.add (f)) {
+                    ring.add (f);
+                    var q = faces[f];
+                    int at = 0;
+                    for (int i = 0; i < 4; i++) if ((q[i] == ea && q[(i + 1) % 4] == eb) || (q[i] == eb && q[(i + 1) % 4] == ea)) at = i;
+                    ea = q[(at + 2) % 4];
+                    eb = q[(at + 3) % 4];
+                    f = face_with_edge (ea, eb, f);
+                }
+            }
+            if (ring.size == 0) return false;
+            var mids = new Gee.HashMap<string, int> ();
+            var cut = new Gee.HashSet<string> ();
+            int sa = a, sb = b;
+            foreach (int f in ring) {
+                var q = faces[f];
+                for (int i = 0; i < 4; i++) {
+                    string k = edge_key (q[i], q[(i + 1) % 4]);
+                    if (k == edge_key (sa, sb)) cut.add (k);
+                }
+            }
+            bool grew = true;
+            while (grew) {
+                grew = false;
+                foreach (int f in ring) {
+                    var q = faces[f];
+                    for (int i = 0; i < 4; i++) {
+                        string k = edge_key (q[i], q[(i + 1) % 4]);
+                        string opposite = edge_key (q[(i + 2) % 4], q[(i + 3) % 4]);
+                        if (cut.contains (k) && cut.add (opposite)) grew = true;
+                    }
+                }
+            }
+            var fresh = new Gee.ArrayList<Gee.ArrayList<int>> ();
+            foreach (int f in ring) {
+                var q = faces[f];
+                int at = -1;
+                for (int i = 0; i < 4; i++) if (cut.contains (edge_key (q[i], q[(i + 1) % 4]))) {
+                    at = i;
+                    break;
+                }
+                if (at < 0) continue;
+                int p0 = q[at], p1 = q[(at + 1) % 4], p2 = q[(at + 2) % 4], p3 = q[(at + 3) % 4];
+                int[] pair = { p0, p1, p2, p3 };
+                var made = new int[2];
+                for (int e = 0; e < 2; e++) {
+                    int u = pair[e * 2], v = pair[e * 2 + 1];
+                    string k = edge_key (u, v);
+                    if (!mids.has_key (k)) {
+                        mids[k] = cage.add_vertex (cage.vertices[u].lerp (cage.vertices[v], 0.5));
+                        if (creases.contains (k)) {
+                            creases.remove (k);
+                            creases.add (edge_key (u, mids[k]));
+                            creases.add (edge_key (mids[k], v));
+                        }
+                    }
+                    made[e] = mids[k];
+                }
+                q.clear ();
+                q.add (p0);
+                q.add (made[0]);
+                q.add (made[1]);
+                q.add (p3);
+                var other = new Gee.ArrayList<int> ();
+                other.add (made[0]);
+                other.add (p1);
+                other.add (p2);
+                other.add (made[1]);
+                fresh.add (other);
+            }
+            faces.add_all (fresh);
+            return true;
         }
 
         public void move_face (int f, Vec3 delta) {
