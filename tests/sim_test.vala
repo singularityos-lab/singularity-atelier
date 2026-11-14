@@ -55,6 +55,73 @@ void test_body () {
     check ((man.measures.waist - md.waist).abs () < 20, "male waist %.0f wants %.0f".printf (man.measures.waist, md.waist));
 }
 
+void test_children () {
+    foreach (unowned string g in new string[] { "girl", "boy" }) {
+        var table = MeasurementTable.standard_for (g);
+        check (table != null && table.is_standard () && table.gender == g, "%s table exists".printf (g));
+        foreach (unowned string size in new string[] { "104", "128", "152" }) {
+            var d = BodyDims.from_table (table, size);
+            var body = Body.build (BodyFit.fit (d, g), BodyPose.named ("a-pose"), new BodyLook ());
+            var m = body.measures;
+            check ((m.height - d.height).abs () < 3, "%s %s height %.0f wants %.0f".printf (g, size, m.height, d.height));
+            check ((m.bust - d.bust).abs () < 35, "%s %s chest %.0f wants %.0f".printf (g, size, m.bust, d.bust));
+            check ((m.waist - d.waist).abs () < 45, "%s %s waist %.0f wants %.0f".printf (g, size, m.waist, d.waist));
+            check ((m.hip - d.hip).abs () < 35, "%s %s hip %.0f wants %.0f".printf (g, size, m.hip, d.hip));
+            check ((m.inseam - d.inseam).abs () < 40, "%s %s inseam %.0f wants %.0f".printf (g, size, m.inseam, d.inseam));
+        }
+    }
+    var p = new Pattern ();
+    p.table = MeasurementTable.standard_kids (true);
+    Samples.tshirt_pattern (p);
+    var settings = new GarmentSettings ();
+    settings.resolution = 16;
+    var kid = Body.build (BodyFit.fit (BodyDims.from_table (p.table, "128"), "girl"), BodyPose.named ("a-pose"));
+    var sim = new GarmentSim (p.evaluate ("128"), settings, kid);
+    check (sim.min_body_distance () > 0, "child T-shirt starts outside the body %.2f".printf (sim.min_body_distance ()));
+    sim.run (300);
+    check (sim.max_sew_gap () < 20, "child T-shirt seams close to %.1f mm".printf (sim.max_sew_gap ()));
+    check (sim.max_stretch () < 0.2, "child T-shirt is not stretched %.3f".printf (sim.max_stretch ()));
+    check (sim.min_body_distance () > 0.5, "child T-shirt stays outside the body %.2f".printf (sim.min_body_distance ()));
+}
+
+void test_adopt () {
+    var table = MeasurementTable.standard_women ();
+    var own = Body.build (BodyFit.fit (BodyDims.from_table (table, "40"), "female"), BodyPose.named ("a-pose"));
+    var src = Mesh.from_scene (own.mesh);
+    for (int i = 0; i < src.vertices.size; i++) {
+        var v = src.vertices[i];
+        src.vertices[i] = Vec3 (v.x / 1000 + 3, -v.z / 1000 - 2, v.y / 1000 + 0.5);
+    }
+    var list = new Gee.ArrayList<Mesh> ();
+    list.add (src);
+    try {
+        var body = Body.adopt (list, "female");
+        Singularity.Scene.Vec3 lo, hi;
+        body.mesh.bounds (out lo, out hi);
+        check (body.imported && (hi.y - own.measures.height).abs () < 15, "imported body stands %.0f mm tall for %.0f".printf (hi.y, own.measures.height));
+        check (lo.y.abs () < 1 && (lo.x + hi.x).abs () < 6 && (lo.z + hi.z).abs () < 6, "imported body is upright and centred");
+        check ((body.measures.height - own.measures.height).abs () < 15, "measures follow the imported height");
+        check (body.solid_triangles.length == src.triangles.size && body.solid_vertices == src.vertices.size, "the imported mesh is the collider");
+        var arm = Body.build (BodyFit.fit (BodyDims.from_table (table, "40"), "female"), BodyPose.named ("relaxed"));
+        var low = new Gee.ArrayList<Mesh> ();
+        low.add (Mesh.from_scene (arm.mesh));
+        var followed = Body.adopt (low, "female");
+        var want = arm.joint ("wrist.L", true), got = followed.joint ("wrist.L", true);
+        check ((want.x - got.x).abs () < 45 && (want.y - got.y).abs () < 45, "skeleton follows the imported arms, wrist %.0f %.0f for %.0f %.0f".printf (got.x, got.y, want.x, want.y));
+    } catch (Error e) {
+        check (false, e.message);
+    }
+    var small = new Gee.ArrayList<Mesh> ();
+    small.add (new Mesh ());
+    bool refused = false;
+    try {
+        Body.adopt (small, "female");
+    } catch (Error e) {
+        refused = true;
+    }
+    check (refused, "an empty file is refused");
+}
+
 void test_fabrics () {
     check (FabricPreset.all ().size >= 6, "fabric presets");
     var denim = FabricPreset.find ("denim");
@@ -278,6 +345,8 @@ int main () {
     test_fabrics ();
     test_mesher ();
     test_body ();
+    test_children ();
+    test_adopt ();
     test_collider ();
     test_hanging_patch ();
     test_bending ();

@@ -39,6 +39,8 @@ namespace Singularity.Apps.Atelier {
                 var m = new ContextMenu (std);
                 m.add_item (_("Women EU 34 to 46"), null, () => replace (MeasurementTable.standard_women ()));
                 m.add_item (_("Men EU 44 to 56"), null, () => replace (MeasurementTable.standard_men ()));
+                m.add_item (_("Girls EU 104 to 152"), null, () => replace (MeasurementTable.standard_kids (true)));
+                m.add_item (_("Boys EU 104 to 152"), null, () => replace (MeasurementTable.standard_kids (false)));
                 Dialogs.popup (m);
             });
             body.append (tg);

@@ -17,6 +17,9 @@ namespace Singularity.Apps.Atelier {
         private int64 rate_time;
         private int rate_steps;
         private string size;
+        private SelectionRow? size_row;
+        private Body? own_body;
+        private string own_key = "";
         private ActionRow status_row;
         private Button simulate_button;
         private Box seam_box;
@@ -191,7 +194,7 @@ namespace Singularity.Apps.Atelier {
 
         private string gender () {
             string g = project.garment.avatar_gender != "" ? project.garment.avatar_gender : project.pattern.table.gender;
-            return g == "male" ? "male" : "female";
+            return g in new string[] { "male", "girl", "boy" } ? g : "female";
         }
 
         private BodyPose pose () {
@@ -264,7 +267,7 @@ namespace Singularity.Apps.Atelier {
 
         private string hair () {
             string h = project.garment.avatar_hair;
-            if (h == "auto") return gender () == "male" ? "short02" : "long01";
+            if (h == "auto") return gender () == "male" || gender () == "boy" ? "short02" : (gender () == "girl" ? "ponytail01" : "long01");
             return h;
         }
 
@@ -285,26 +288,67 @@ namespace Singularity.Apps.Atelier {
         }
 
         private BodyDims dims () {
-            var d = BodyDims.from_table (project.pattern.table, size);
+            bool kid = gender () == "girl" || gender () == "boy";
+            var d = kid && project.pattern.table.gender != gender () ? BodyDims.child () : BodyDims.from_table (project.pattern.table, size);
             foreach (var e in project.garment.avatar.entries) d.set_field (e.key, e.value);
             return d;
+        }
+
+        private void match_table () {
+            var t = project.pattern.table;
+            if (!t.is_standard () || t.gender == gender ()) return;
+            var next = MeasurementTable.standard_for (gender ());
+            if (next == null) return;
+            project.pattern.table = next;
+            project.pattern.active_size = next.base_size;
+            size = next.base_size;
+            stale = true;
+            if (size_row != null) {
+                string[] sizes = {};
+                foreach (var s in next.sizes) sizes += s;
+                size_row.set_items (sizes);
+                size_row.current_value = size;
+            }
+            project.touch ("pattern");
+            canvas.fit_all ();
         }
 
         private Widget avatar_page () {
             var page = new Box (Orientation.VERTICAL, 0);
             var avatar = new PreferencesGroup (_("Avatar"));
-            string[] genders = { _("Female"), _("Male") };
-            var gender_row = new SelectionRow (_("Body"), genders, genders[gender () == "male" ? 1 : 0]);
+            string[] gender_ids = { "female", "male", "girl", "boy" };
+            string[] genders = { _("Woman"), _("Man"), _("Girl"), _("Boy") };
+            int gender_at = 0;
+            for (int i = 0; i < gender_ids.length; i++) if (gender_ids[i] == gender ()) gender_at = i;
+            var gender_row = new SelectionRow (_("Body"), genders, genders[gender_at]);
             gender_row.selected.connect ((label) => {
-                project.garment.avatar_gender = label == genders[1] ? "male" : "female";
+                for (int i = 0; i < gender_ids.length; i++) if (genders[i] == label) project.garment.avatar_gender = gender_ids[i];
+                project.garment.avatar.clear ();
+                project.garment.look.unset ("avatar_file");
                 project.touch ("garment");
-                body_changed ();
+                match_table ();
+                rebuild_measures ();
+                refresh ();
             });
             avatar.add_row (gender_row);
+            var import_row = new ActionRow (_("Own Body"), _("A scanned or modelled body from an OBJ, glTF or FBX file"));
+            var import_btn = new Button.with_label (_("Import"));
+            import_btn.valign = Align.CENTER;
+            import_btn.clicked.connect (() => {
+                Dialogs.open.begin (window (), _("Choose a Body"), _("3D models"), { "obj", "gltf", "glb", "fbx" }, (o, r) => {
+                    var file = Dialogs.open.end (r);
+                    if (file == null || file.get_path () == null) return;
+                    project.garment.look["avatar_file"] = file.get_path ();
+                    project.touch ("garment");
+                    body_changed ();
+                });
+            });
+            import_row.add_suffix (import_btn);
+            avatar.add_row (import_row);
             string[] sizes = {};
             foreach (var s in project.pattern.table.sizes) sizes += s;
             if (sizes.length == 0) sizes += size;
-            var size_row = new SelectionRow (_("Size"), sizes, size);
+            size_row = new SelectionRow (_("Size"), sizes, size);
             size_row.selected.connect ((s) => {
                 size = s;
                 stale = true;
@@ -792,6 +836,21 @@ namespace Singularity.Apps.Atelier {
                 fits[key] = shape;
             }
             body = Body.build (shape, pose (), look ());
+            string own = g.look_text ("avatar_file", "");
+            if (own != "") {
+                try {
+                    string lower = own.down ();
+                    if (own_body == null || own_key != own + gender ()) {
+                        var loaded = lower.has_suffix (".obj") ? Obj.load (own) : (lower.has_suffix (".fbx") ? Fbx.load (own) : Gltf.load (own));
+                        own_body = Body.adopt (loaded, gender ());
+                        own_key = own + gender ();
+                    }
+                    body = own_body;
+                } catch (Error e) {
+                    g.look.unset ("avatar_file");
+                    message (_("The body could not be used: %s").printf (e.message));
+                }
+            }
             body_key = full;
             if (sim != null) sim.set_body (body);
         }
@@ -927,6 +986,8 @@ namespace Singularity.Apps.Atelier {
         }
 
         public void avatar_updated () {
+            match_table ();
+            if (stale) { refresh (); return; }
             ensure_body ();
             show_scene ();
         }

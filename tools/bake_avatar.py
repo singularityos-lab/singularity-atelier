@@ -148,6 +148,17 @@ def main():
                 dense.append(("%s:%s-%s" % (g, m, w), d, False))
         for h in ("minheight", "maxheight"):
             dense.append(("%s:%s" % (g, h), target("macrodetails", "height", "%s-young-averagemuscle-averageweight-%s.target" % (g, h)), False))
+    for kid, g in (("girl", "female"), ("boy", "male")):
+        shape = base.copy()
+        for r in RACES:
+            shape += target("macrodetails", "%s-%s-child.target" % (r, g)) / 3.0
+        center = target("macrodetails", "universal-%s-child-averagemuscle-averageweight.target" % g)
+        dense.append((kid, shape + center, True))
+        for w in ("minweight", "maxweight"):
+            d = target("macrodetails", "universal-%s-child-averagemuscle-%s.target" % (g, w)) - center
+            dense.append(("%s:averagemuscle-%s" % (kid, w), d, False))
+        for h in ("minheight", "maxheight"):
+            dense.append(("%s:%s" % (kid, h), target("macrodetails", "height", "%s-child-averagemuscle-averageweight-%s.target" % (g, h)), False))
     for c in ("mincup", "maxcup"):
         dense.append(("female:%s" % c, target("breast", "female-young-averagemuscle-averageweight-%s-averagefirmness.target" % c), False))
     mdir = os.path.join(data, "targets", "measure")
@@ -189,7 +200,7 @@ def main():
 
     out = bytearray()
     out += b"ATAV"
-    out += struct.pack("<7I", 5, nv, len(used), len(quads), len(order), len(joint_names), len(dense))
+    out += struct.pack("<7I", 6, nv, len(used), len(quads), len(order), len(joint_names), len(dense))
     out += struct.pack("<I", len(sparse))
     out += np.array([[remap[i] for i in q] for q in quads], dtype="<u2").tobytes()
     for b in order:
@@ -228,16 +239,43 @@ def main():
         out += np.array(tris, dtype="<u2").tobytes()
         gone = [remap[i] for i in hidden if i in remap and remap[i] < len(used)]
         out += struct.pack("<I", len(gone)) + np.array(gone, dtype="<u2").tobytes()
-    mask = []
+    brow_amount = np.zeros(len(used))
     if brows:
         pts = proxy_points(verts, brows[1], brows[2])
+        folder = os.path.join(assets, BROWS)
+        uvs, faces = [], []
+        with open(os.path.join(folder, "eyebrow001.obj"), errors="replace") as f:
+            for line in f:
+                p = line.split()
+                if p and p[0] == "vt":
+                    uvs.append((float(p[1]), float(p[2])))
+                elif p and p[0] == "f":
+                    c = [(int(t.split("/")[0]) - 1, int(t.split("/")[1]) - 1) for t in p[1:]]
+                    for k in range(1, len(c) - 1):
+                        faces.append((c[0], c[k], c[k + 1]))
+        from PIL import Image
+        alpha = np.array(Image.open(os.path.join(folder, "eyebrow001.png")).convert("RGBA"))[:, :, 3] / 255.0
+        samples = []
+        for a, b, c in faces:
+            for u in np.linspace(0, 1, 14):
+                for v in np.linspace(0, 1 - u, 14):
+                    w = 1 - u - v
+                    tu = uvs[a[1]][0] * w + uvs[b[1]][0] * u + uvs[c[1]][0] * v
+                    tv = uvs[a[1]][1] * w + uvs[b[1]][1] * u + uvs[c[1]][1] * v
+                    px = min(alpha.shape[1] - 1, max(0, int(tu * alpha.shape[1])))
+                    py = min(alpha.shape[0] - 1, max(0, int((1 - tv) * alpha.shape[0])))
+                    if alpha[py, px] > 0.45:
+                        samples.append(pts[a[0]] * w + pts[b[0]] * u + pts[c[0]] * v)
+        samples = np.array(samples)
         body = verts[np.array(used)]
-        near = np.zeros(len(used), dtype=bool)
-        for q in pts:
-            near |= np.linalg.norm(body - q, axis=1) < 0.03
-        mask = np.nonzero(near)[0]
+        near = np.nonzero(np.linalg.norm(body - samples.mean(axis=0), axis=1) < 1.2)[0]
+        for i in near:
+            dist = np.linalg.norm(samples - body[i], axis=1).min()
+            brow_amount[i] = max(0.0, 1.0 - dist / 0.045)
+    mask = np.nonzero(brow_amount > 0.02)[0]
     out += struct.pack("<I", len(mask))
-    out += np.array(mask, dtype="<u2").tobytes()
+    for i in mask:
+        out += struct.pack("<HB", int(i), int(round(brow_amount[i] * 255)))
     amount = np.zeros(len(used))
     for name in ("mouth-upperlip-volume-incr", "mouth-lowerlip-volume-incr"):
         d = np.linalg.norm(target("mouth", name + ".target")[: len(used)], axis=1)

@@ -191,6 +191,53 @@ namespace Singularity.Apps.Atelier {
             return t;
         }
 
+        public static MeasurementTable standard_kids (bool girl) {
+            var t = new MeasurementTable ();
+            t.name = girl ? "Girls EU" : "Boys EU";
+            t.unit = "cm";
+            t.gender = girl ? "girl" : "boy";
+            foreach (var s in new string[] { "104", "116", "128", "140", "152" }) t.sizes.add (s);
+            t.base_size = "128";
+            add (t, "height", "Height", 128, 12);
+            add (t, "bust_circ", "Chest circumference", 64, 4);
+            add (t, "waist_circ", "Waist circumference", 58, 2.5);
+            add (t, "hip_circ", "Hip circumference", girl ? 69 : 68, 5);
+            add (t, "neck_circ", "Neck circumference", 29, 1);
+            add (t, "shoulder_length", "Shoulder length", 9.5, 0.8);
+            add (t, "across_back", "Across back", 27, 2);
+            add (t, "back_waist_length", "Neck to waist, back", 30, 2.5);
+            add (t, "front_waist_length", "Neck to waist, front", 30.5, 2.5);
+            add (t, "bust_point_distance", "Nipple to nipple", 14, 1);
+            add (t, "bust_height", "Neck to chest line", 18, 1.5);
+            add (t, "arm_length", "Shoulder to wrist", 44, 4.5);
+            add (t, "upper_arm_circ", "Upper arm circumference", 19.5, 1.2);
+            add (t, "wrist_circ", "Wrist circumference", 13.5, 0.5);
+            add (t, "waist_to_hip", "Waist to hip", 14, 1.2);
+            add (t, "waist_to_knee", "Waist to knee", 42, 4.5);
+            add (t, "waist_to_floor", "Waist to floor", 78, 8.5);
+            add (t, "inseam", "Inside leg", 59, 6.5);
+            add (t, "crotch_depth", "Body rise", 20, 1.3);
+            add (t, "thigh_circ", "Thigh circumference", 38, 3);
+            add (t, "knee_circ", "Knee circumference", 27, 1.8);
+            add (t, "ankle_circ", "Ankle circumference", 18.5, 1);
+            add (t, "head_circ", "Head circumference", 52, 0.7);
+            return t;
+        }
+
+        public static MeasurementTable? standard_for (string gender) {
+            switch (gender) {
+                case "female": return standard_women ();
+                case "male": return standard_men ();
+                case "girl": return standard_kids (true);
+                case "boy": return standard_kids (false);
+                default: return null;
+            }
+        }
+
+        public bool is_standard () {
+            return name == "Women EU" || name == "Men EU" || name == "Girls EU" || name == "Boys EU";
+        }
+
         private static void add (MeasurementTable t, string name, string full, double base_value, double step) {
             var m = new Measurement (name, base_value);
             m.full_name = full;
