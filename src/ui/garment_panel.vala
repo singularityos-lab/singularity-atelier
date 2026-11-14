@@ -680,7 +680,7 @@ namespace Singularity.Apps.Atelier {
                     local.step ();
                     AtomicInt.inc (ref steps);
                     int64 spent = get_monotonic_time () - t0;
-                    if (spent < 16000) Thread.usleep ((ulong) (16000 - spent));
+                    Thread.usleep ((ulong) (spent < 15000 ? 16000 - spent : 1000));
                 }
                 return null;
             });

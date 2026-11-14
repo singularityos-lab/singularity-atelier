@@ -319,6 +319,21 @@ namespace Singularity.Apps.Atelier {
                     win.product_panel.refresh ();
                     win.view3d.reset_camera ();
                     return 900;
+                case "lag": {
+                    int total = int.parse (a[1]);
+                    int64 begin = get_monotonic_time ();
+                    int64 last = begin;
+                    int64 worst = 0;
+                    Timeout.add (10, () => {
+                        int64 now = get_monotonic_time ();
+                        if (now - last > worst) worst = now - last;
+                        last = now;
+                        if (now - begin < total * 1000) return Source.CONTINUE;
+                        printerr ("script: lag worst %.0f ms over %d ms, last 3D frame %.0f ms, quality level %d\n", worst / 1000.0, total, win.view3d.frame_ms, win.view3d.quality_level);
+                        return Source.REMOVE;
+                    });
+                    return total + 300;
+                }
                 case "block":
                     win.garment_panel.use_block (a[1]);
                     return 900;

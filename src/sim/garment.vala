@@ -102,6 +102,11 @@ namespace Singularity.Apps.Atelier {
         private AtCore.Sdf? sdf;
         private GarmentSettings settings;
         private Mutex guard = Mutex ();
+        private Mutex shot_guard = Mutex ();
+        private float[] shot_pos = {};
+        private float[] shot_scalar = {};
+        private bool shot_has_scalar;
+        private double shot_gap;
         private float[] scratch = {};
         private Wrap lower;
         private Wrap leg;
@@ -656,7 +661,26 @@ namespace Singularity.Apps.Atelier {
             cloth.set_gravity ((float) (9810 * ((30 - gap) / 22).clamp (0, 1)));
             cloth.step (1.0f / 60, substeps);
             frame++;
+            publish ();
             guard.unlock ();
+        }
+
+        private void publish () {
+            int n = cloth.count ();
+            bool strain = map == "strain", distance = map == "distance";
+            if (strain) cloth.strain (scratch);
+            else if (distance) cloth.distance (scratch);
+            float gap = cloth.seam_gap ();
+            shot_guard.lock ();
+            if (shot_pos.length != n * 3) {
+                shot_pos = new float[n * 3];
+                shot_scalar = new float[n];
+            }
+            Memory.copy (shot_pos, cloth.positions (), n * 3 * sizeof (float));
+            shot_has_scalar = strain || distance;
+            if (shot_has_scalar) Memory.copy (shot_scalar, scratch, n * sizeof (float));
+            shot_gap = gap;
+            shot_guard.unlock ();
         }
 
         public void run (int frames) {
@@ -665,16 +689,18 @@ namespace Singularity.Apps.Atelier {
         }
 
         public void sync () {
-            guard.lock ();
-            unowned float[] x = cloth.positions ();
-            bool strain = map == "strain", distance = map == "distance";
-            if (strain) cloth.strain (scratch);
-            else if (distance) cloth.distance (scratch);
-            foreach (var p in pieces) {
-                Memory.copy (p.mesh.positions, &x[p.first * 3], p.count * 3 * sizeof (float));
-                if (strain || distance) Memory.copy (p.mesh.scalars, &scratch[p.first], p.count * sizeof (float));
+            if (guard.trylock ()) {
+                publish ();
+                guard.unlock ();
             }
-            guard.unlock ();
+            shot_guard.lock ();
+            if (shot_pos.length == cloth.count () * 3) {
+                foreach (var p in pieces) {
+                    Memory.copy (p.mesh.positions, &shot_pos[p.first * 3], p.count * 3 * sizeof (float));
+                    if (shot_has_scalar) Memory.copy (p.mesh.scalars, &shot_scalar[p.first], p.count * sizeof (float));
+                }
+            }
+            shot_guard.unlock ();
             foreach (var p in pieces) {
                 p.mesh.compute_normals ();
                 p.mesh.touch_positions ();
@@ -714,7 +740,7 @@ namespace Singularity.Apps.Atelier {
         }
 
         public double max_sew_gap () {
-            return cloth.seam_gap ();
+            return shot_gap;
         }
 
         public double motion () {
