@@ -124,7 +124,14 @@ namespace Singularity.Apps.Atelier {
             simg.add_row (spacing);
             page.append (simg);
 
-            var sewing = new PreferencesGroup (_("Sewing"), _("Sew edges in the pattern window with the sewing tools."));
+            var start = new PreferencesGroup (_("Start From"), _("A block replaces the current pattern and its seams."));
+            foreach (var id in Samples.garments ()) {
+                string kind = id;
+                Dialogs.button_row (start, Samples.garment_label (kind), null, _("Use"), () => use_block (kind));
+            }
+            page.append (start);
+
+                        var sewing = new PreferencesGroup (_("Sewing"), _("Sew edges in the pattern window with the sewing tools."));
             Dialogs.header_button (sewing, _("Auto Sew"), () => {
                 if (sim == null) return;
                 sim.auto_sew (project.pattern.evaluate (size));
@@ -655,11 +662,36 @@ namespace Singularity.Apps.Atelier {
             view.queue_render ();
         }
 
+        public void use_block (string kind) {
+            stop ();
+            Samples.garment (project, kind);
+            project.garment.ensure_fabrics ();
+            canvas.selected_piece = "";
+            canvas.selected_seam = -1;
+            stale = true;
+            ensure_sim ();
+            canvas.fit_all ();
+            rebuild_piece_box ();
+            rebuild_fabric_list ();
+            rebuild_seam_box ();
+            status_row.title = _("Ready");
+            status_row.subtitle = _("Not simulated yet");
+        }
+
         public void fabrics_updated () {
             apply_fabrics ();
             rebuild_fabric_list ();
             rebuild_fabric_props ();
             rebuild_piece_box ();
+        }
+
+        public string report () {
+            if (sim == null) return "no garment";
+            var sb = new StringBuilder ();
+            sb.append_printf ("%d particles, gap %.1f, stretch %.3f, body %.2f, motion %.1f;", sim.particle_count (), sim.max_sew_gap (), sim.max_stretch (), sim.min_body_distance (), sim.motion ());
+            var gaps = sim.seam_gaps ();
+            for (int i = 0; i < gaps.length; i++) sb.append_printf (" %s=%.0f", canvas.seam_title (i), gaps[i]);
+            return sb.str;
         }
 
         public void show_page (string name) {

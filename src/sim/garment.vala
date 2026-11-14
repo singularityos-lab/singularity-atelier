@@ -103,6 +103,10 @@ namespace Singularity.Apps.Atelier {
         private GarmentSettings settings;
         private Mutex guard = Mutex ();
         private float[] scratch = {};
+        private Wrap lower;
+        private Wrap leg;
+        private Wrap limb;
+        private double leg_center;
         private int[] stitch_i = {};
         private int[] stitch_j = {};
         private int[] stitch_k = {};
@@ -166,19 +170,28 @@ namespace Singularity.Apps.Atelier {
         }
 
         private void build (PatternResult result) {
-            double front = 0, back = 0;
+            double front = 0, back = 0, low_front = 0, low_back = 0;
             foreach (var g in result.pieces) {
                 if (g.seam.length < 3) continue;
                 var b = g.bounds ();
                 double w = g.piece.on_fold || g.piece.pair ? b.w * 2 : b.w;
                 if (g.piece.placement == "back") back += w;
-                else if (g.piece.placement != "sleeve") front += w;
+                else if (g.piece.placement == "front") front += w;
+                else if (g.piece.placement == "skirt-back") low_back += w;
+                else if (g.piece.placement == "skirt-front") low_front += w;
             }
             var m = body.measures;
             double depth = m.bust / Math.PI * 0.42 + 55;
             double width = body.joint ("upperarm01.L").distance (body.joint ("upperarm01.R")) / 2 + 45;
             double cz = (body.joint ("spine02").z + body.joint ("spine04").z) / 2;
             var wrap = new Wrap (width, depth, cz, double.max (front, back) / 2 + 20);
+            double hx, hz, hrx, hrz;
+            body.extent (m.y_hip, out hx, out hz, out hrx, out hrz);
+            lower = new Wrap (hrx + 40, hrz + 40, hz, double.max (low_front, low_back) / 2 + 20);
+            double outer = hrx + 40, inner = 12;
+            leg = new Wrap ((outer - inner) / 2, hrz + 40, hz, 0);
+            leg_center = (outer + inner) / 2;
+            limb = new Wrap (m.thigh / (2 * Math.PI) + 30, m.thigh / (2 * Math.PI) + 30, 0, 0);
             foreach (var g in result.pieces) {
                 if (g.seam.length < 3 || g.edges.size == 0) continue;
                 int copies = g.piece.placement == "sleeve" || (g.piece.pair && !g.piece.on_fold) ? 2 : 1;
@@ -296,7 +309,7 @@ namespace Singularity.Apps.Atelier {
             if (unfold) {
                 var fe = g.edges[fold].pts;
                 center = (fe[0].x + fe[fe.length - 1].x) / 2;
-            } else if (g.piece.pair && piece.placement != "sleeve") {
+            } else if (g.piece.pair && piece.placement != "sleeve" && !piece.placement.has_prefix ("leg-")) {
                 center = bounds.x;
             }
             int index = pieces.size;
@@ -365,6 +378,30 @@ namespace Singularity.Apps.Atelier {
             double s = u - center;
             if (piece.copy == 1) s = -s;
             double x, z;
+            if (piece.placement.has_prefix ("leg-")) {
+                double side = piece.copy == 1 ? -1 : 1;
+                double y3 = m.y_waist + 25 - (v - bounds.y);
+                bool rear = piece.placement == "leg-back";
+                leg.at ((u - bounds.cx ()) * side, rear, out x, out z);
+                x += leg_center * side;
+                double k = ((m.y_crotch - y3) / 160).clamp (0, 1);
+                if (k > 0) {
+                    string sfx = side > 0 ? ".L" : ".R";
+                    var hip = body.joint ("upperleg01" + sfx);
+                    var knee = body.joint ("lowerleg01" + sfx);
+                    var ankle = body.joint ("foot" + sfx);
+                    Vec3 axis = y3 > knee.y ? hip.lerp (knee, ((hip.y - y3) / double.max (1, hip.y - knee.y)).clamp (0, 1)) : knee.lerp (ankle, ((knee.y - y3) / double.max (1, knee.y - ankle.y)).clamp (0, 1));
+                    double lx, lz;
+                    limb.at ((u - bounds.cx ()) * side, rear, out lx, out lz);
+                    x += (axis.x + lx - x) * k;
+                    z += (axis.z + lz - z) * k;
+                }
+                return Vec3 (x, y3, z);
+            }
+            if (piece.placement.has_prefix ("skirt-")) {
+                lower.at (s, piece.placement == "skirt-back", out x, out z);
+                return Vec3 (x, m.y_waist + 25 - (v - bounds.y), z);
+            }
             wrap.at (s, piece.placement == "back", out x, out z);
             return Vec3 (x, m.y_neck + 38 - (v - bounds.y), z);
         }
@@ -385,6 +422,8 @@ namespace Singularity.Apps.Atelier {
                     var axis = body.joint ("wrist" + sfx).sub (sh).normalized ();
                     var d = pa.sub (sh);
                     outward = d.sub (axis.scale (d.dot (axis)));
+                } else if (piece.placement.has_prefix ("leg-")) {
+                    outward = Vec3 (pa.x - leg_center * (piece.copy == 1 ? -1 : 1), 0, pa.z - cz);
                 } else {
                     outward = Vec3 (pa.x, 0, pa.z - cz);
                 }

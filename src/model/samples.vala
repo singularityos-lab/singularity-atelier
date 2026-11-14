@@ -119,6 +119,120 @@ namespace Singularity.Apps.Atelier {
             n.hidden = true;
         }
 
+        private void clear (Project project) {
+            var p = project.pattern;
+            p.increments.clear ();
+            p.points.clear ();
+            p.curves.clear ();
+            p.pieces.clear ();
+            project.garment.seams.clear ();
+            project.garment.piece_fabrics.clear ();
+        }
+
+        private void seam (Project project, Piece a, int ea, Piece b, int eb) {
+            var sp = new SeamPair (a.id, ea, b.id, eb);
+            sp.reverse_b = false;
+            project.garment.seams.add (sp);
+        }
+
+        public string[] garments () {
+            return { "tshirt", "skirt", "trousers" };
+        }
+
+        public string garment_label (string id) {
+            switch (id) {
+                case "skirt": return _("Straight Skirt");
+                case "trousers": return _("Trousers");
+                default: return _("T-Shirt");
+            }
+        }
+
+        public void garment (Project project, string id) {
+            clear (project);
+            switch (id) {
+                case "skirt":
+                    skirt_pattern (project);
+                    break;
+                case "trousers":
+                    trousers_pattern (project);
+                    break;
+                default:
+                    tshirt_pattern (project.pattern);
+                    break;
+            }
+            project.touch ("pattern");
+        }
+
+        private Piece skirt_half (Pattern p, string name, string tag, string x0, string placement) {
+            var a = base_pt (p, "A" + tag, x0, "0");
+            var h = end_line (p, "H" + tag, a, "#skirt", "270");
+            var s = offset (p, "S" + tag, a, "waist_circ / 4 + 1", "-1.2");
+            var q = offset (p, "P" + tag, a, "hip_circ / 4 + 1", "waist_to_hip");
+            var e = offset (p, "Q" + tag, a, "hip_circ / 4 + 1", "#skirt");
+            var waist = path (p, a, "0", "waist_circ / 12", s, "187", "waist_circ / 12");
+            waist.name = name + "_Waist";
+            var side = path (p, s, "282", "waist_to_hip / 3", q, "90", "waist_to_hip / 3");
+            side.name = name + "_Side";
+            var pc = piece (p, name, { h.id, a.id, waist.id, side.id, e.id }, { false, false, true, true, false });
+            pc.on_fold = true;
+            pc.fold_edge = 0;
+            pc.placement = placement;
+            pc.nodes[4].sa_after = "3";
+            return pc;
+        }
+
+        public void skirt_pattern (Project project) {
+            var p = project.pattern;
+            p.increments.add (new Increment ("skirt", "waist_to_knee"));
+            var front = skirt_half (p, _("Front"), "", "0", "skirt-front");
+            front.code = "01";
+            var back = skirt_half (p, _("Back"), "1", "45", "skirt-back");
+            back.code = "02";
+            seam (project, front, 2, back, 2);
+            seam (project, front, 3, back, 3);
+        }
+
+        private Piece trouser_leg (Pattern p, string name, string tag, string x0, string fork, string rise_up, string placement) {
+            string mid = "(%s + hip_circ / 4 + 1) / 2".printf (fork);
+            var wc = base_pt (p, "WC" + tag, "%s + %s + 1".printf (x0, fork), rise_up);
+            var ws = base_pt (p, "WS" + tag, "%s + %s + waist_circ / 4 + 2.5".printf (x0, fork), "-1");
+            var hs = base_pt (p, "HS" + tag, "%s + %s + hip_circ / 4 + 1".printf (x0, fork), "waist_to_hip");
+            var hc = base_pt (p, "HC" + tag, "%s + %s".printf (x0, fork), "waist_to_hip");
+            var cp = base_pt (p, "CP" + tag, x0, "#rise");
+            var ko = base_pt (p, "KO" + tag, "%s + %s + #kneew".printf (x0, mid), "waist_to_knee");
+            var ki = base_pt (p, "KI" + tag, "%s + %s - #kneew".printf (x0, mid), "waist_to_knee");
+            var ho = base_pt (p, "HO" + tag, "%s + %s + #hem / 2".printf (x0, mid), "#rise + inseam - 7");
+            var hi = base_pt (p, "HI" + tag, "%s + %s - #hem / 2".printf (x0, mid), "#rise + inseam - 7");
+            var side = path (p, ws, "280", "waist_to_hip / 3", hs, "90", "waist_to_hip / 3");
+            side.name = name + "_Side";
+            var crotch = path (p, cp, "5", "%s * 0.6".printf (fork), hc, "270", "(#rise - waist_to_hip) * 0.6");
+            crotch.name = name + "_Crotch";
+            var pc = piece (p, name, { wc.id, ws.id, side.id, ko.id, ho.id, hi.id, ki.id, cp.id, crotch.id }, { false, false, true, false, false, false, false, false, true });
+            pc.pair = true;
+            pc.quantity = 2;
+            pc.placement = placement;
+            pc.nodes[4].sa_after = "3";
+            return pc;
+        }
+
+        public void trousers_pattern (Project project) {
+            var p = project.pattern;
+            p.increments.add (new Increment ("rise", "crotch_depth + 1.5"));
+            p.increments.add (new Increment ("forkf", "hip_circ / 16 + 0.5"));
+            p.increments.add (new Increment ("forkb", "hip_circ / 9"));
+            p.increments.add (new Increment ("kneew", "knee_circ / 4 + 3"));
+            p.increments.add (new Increment ("hem", "ankle_circ / 2 + 7"));
+            var front = trouser_leg (p, _("Front"), "", "0", "#forkf", "0", "leg-front");
+            front.code = "01";
+            var back = trouser_leg (p, _("Back"), "1", "60", "#forkb", "-2", "leg-back");
+            back.code = "02";
+            foreach (int e in new int[] { 1, 2, 3, 5, 6 }) seam (project, front, e, back, e);
+            foreach (int e in new int[] { 7, 8 }) {
+                seam (project, front, e, front, e);
+                seam (project, back, e, back, e);
+            }
+        }
+
         public void tote_pattern (Pattern p) {
             p.unit = "cm";
             p.increments.add (new Increment ("width", "40"));

@@ -312,6 +312,9 @@ namespace Singularity.Apps.Atelier {
                 case "garment":
                     win.show_workspace ("3d");
                     return 800;
+                case "block":
+                    win.garment_panel.use_block (a[1]);
+                    return 900;
                 case "gpage":
                     win.garment_panel.show_page (a[1]);
                     return 400;
@@ -338,6 +341,9 @@ namespace Singularity.Apps.Atelier {
                 case "gfit":
                     win.garment_canvas.fit_all ();
                     return 300;
+                case "greport":
+                    printerr ("script: report %s\n", win.garment_panel.report ());
+                    return 100;
                 case "gstate":
                     printerr ("script: garment tool %s seams %d selected seam %d piece %s\n", win.garment_canvas.tool, win.project.garment.seams.size, win.garment_canvas.selected_seam, win.garment_canvas.selected_piece);
                     return 100;

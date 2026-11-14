@@ -809,6 +809,29 @@ namespace Singularity.Apps.Atelier {
             mesh.material.double_sided = false;
         }
 
+        public void extent (double y, out double cx, out double cz, out double rx, out double rz) {
+            double x0 = double.INFINITY, x1 = -double.INFINITY, z0 = double.INFINITY, z1 = -double.INFINITY;
+            for (int i = 0; i < data.nrender; i++) {
+                if (data.part[i] == BodyData.PART_ARM || (posed[i * 3 + 1] - y).abs () > 14) continue;
+                double x = posed[i * 3], z = posed[i * 3 + 2];
+                if (x < x0) x0 = x;
+                if (x > x1) x1 = x;
+                if (z < z0) z0 = z;
+                if (z > z1) z1 = z;
+            }
+            if (x0 > x1) {
+                cx = 0;
+                cz = 0;
+                rx = 150;
+                rz = 110;
+                return;
+            }
+            cx = (x0 + x1) / 2;
+            cz = (z0 + z1) / 2;
+            rx = (x1 - x0) / 2;
+            rz = (z1 - z0) / 2;
+        }
+
         public double girth (float[] pos, double y, int mask) {
             var cut = new Cut ();
             slice (pos, y, mask, cut);
