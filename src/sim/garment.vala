@@ -108,6 +108,10 @@ namespace Singularity.Apps.Atelier {
         private bool shot_has_scalar;
         private double shot_gap;
         private float[] scratch = {};
+        private bool dressed = true;
+        private double bag_w = 400;
+        private double bag_h = 380;
+        private double bag_d = 120;
         private Wrap lower;
         private Wrap leg;
         private Wrap limb;
@@ -119,11 +123,12 @@ namespace Singularity.Apps.Atelier {
         private int[] stitch_seam = {};
         private int current_seam;
 
-        public GarmentSim (PatternResult result, GarmentSettings settings, Body body) {
+        public GarmentSim (PatternResult result, GarmentSettings settings, Body body, bool dressed = true) {
             this.settings = settings;
             this.body = body;
+            this.dressed = dressed;
             spacing = ((double) settings.resolution).clamp (4, 60);
-            build_collider ();
+            if (dressed) build_collider ();
             build (result);
         }
 
@@ -134,6 +139,7 @@ namespace Singularity.Apps.Atelier {
         }
 
         public void set_body (Body next) {
+            if (!dressed) return;
             guard.lock ();
             body = next;
             cloth.set_collider (null, 0);
@@ -197,6 +203,16 @@ namespace Singularity.Apps.Atelier {
             leg = new Wrap ((outer - inner) / 2, hrz + 40, hz, 0);
             leg_center = (outer + inner) / 2;
             limb = new Wrap (m.thigh / (2 * Math.PI) + 30, m.thigh / (2 * Math.PI) + 30, 0, 0);
+            foreach (var g in result.pieces) {
+                if (g.seam.length < 3) continue;
+                var gb = g.bounds ();
+                if (g.piece.placement == "bag-panel") {
+                    bag_w = gb.w;
+                    bag_h = gb.h;
+                } else if (g.piece.placement == "bag-gusset") {
+                    bag_d = gb.w;
+                }
+            }
             foreach (var g in result.pieces) {
                 if (g.seam.length < 3 || g.edges.size == 0) continue;
                 int copies = g.piece.placement == "sleeve" || (g.piece.pair && !g.piece.on_fold) ? 2 : 1;
@@ -367,6 +383,49 @@ namespace Singularity.Apps.Atelier {
 
         private Vec3 place (ClothPiece piece, double u, double v, double center, Rect bounds, Wrap wrap) {
             var m = body.measures;
+            if (piece.placement.has_prefix ("bag-") || !dressed) {
+                double lift = 14;
+                double side = piece.copy == 1 ? -1 : 1;
+                double lu = u - bounds.x, lv = v - bounds.y;
+                switch (piece.placement) {
+                    case "bag-gusset": {
+                        double z = lu - bounds.w / 2;
+                        double x, y;
+                        if (lv <= bag_h) {
+                            x = -bag_w / 2;
+                            y = lift + bag_h - lv;
+                        } else if (lv <= bag_h + bag_w) {
+                            x = -bag_w / 2 + (lv - bag_h);
+                            y = lift;
+                        } else {
+                            x = bag_w / 2;
+                            y = lift + (lv - bag_h - bag_w);
+                        }
+                        return Vec3 (x, y, z);
+                    }
+                    case "bag-handle": {
+                        double reach = bag_w / 4;
+                        double straight = double.max (0, (bounds.h - Math.PI * reach) / 2);
+                        double x, y;
+                        if (lv <= straight) {
+                            x = -reach;
+                            y = lv;
+                        } else if (lv <= straight + Math.PI * reach) {
+                            double a = (lv - straight) / reach;
+                            x = -reach * Math.cos (a);
+                            y = straight + reach * Math.sin (a);
+                        } else {
+                            x = reach;
+                            y = straight - (lv - straight - Math.PI * reach);
+                        }
+                        return Vec3 (x, lift + bag_h + 6 + y, side * (bag_d / 2 + 10) + (lu - bounds.w / 2) * side);
+                    }
+                    case "bag-panel":
+                        return Vec3 ((lu - bounds.w / 2) * side, lift + bag_h - lv, side * (bag_d / 2 + 8));
+                    default:
+                        return Vec3 (lu - bounds.w / 2 + (pieces.size - 1) * 60, lift + bounds.h - lv, bag_d / 2 + 120 + pieces.size * 40);
+                }
+            }
             if (piece.placement == "sleeve") {
                 string sfx = piece.copy == 0 ? ".L" : ".R";
                 var sh = body.joint ("upperarm01" + sfx);
@@ -422,7 +481,10 @@ namespace Singularity.Apps.Atelier {
                 var pa = Vec3 (x[a], x[a + 1], x[a + 2]);
                 var n = Vec3 (x[b], x[b + 1], x[b + 2]).sub (pa).cross (Vec3 (x[c], x[c + 1], x[c + 2]).sub (pa));
                 Vec3 outward;
-                if (piece.placement == "sleeve") {
+                if (!dressed || piece.placement.has_prefix ("bag-")) {
+                    outward = Vec3 (pa.x * 0.3, 0, pa.z);
+                    if (piece.placement == "bag-gusset") outward = Vec3 (pa.x, pa.y < 40 ? -200 : 0, 0);
+                } else if (piece.placement == "sleeve") {
                     string sfx = piece.copy == 0 ? ".L" : ".R";
                     var sh = body.joint ("upperarm01" + sfx);
                     var axis = body.joint ("wrist" + sfx).sub (sh).normalized ();
@@ -506,6 +568,12 @@ namespace Singularity.Apps.Atelier {
             current_seam = -1;
             foreach (var sp in settings.seams) {
                 current_seam++;
+                if (sp.copy_a >= 0 && sp.copy_b >= 0) {
+                    var ca = find_chain (sp.piece_a, sp.edge_a, sp.copy_a);
+                    var cb = find_chain (sp.piece_b, sp.edge_b, sp.copy_b);
+                    if (ca != null && cb != null) join (ca, sp.a0, sp.a1, cb, sp.b0, sp.b1, sp.reverse_b);
+                    continue;
+                }
                 if (sp.piece_a == sp.piece_b && sp.edge_a == sp.edge_b) {
                     var a = find_chain (sp.piece_a, sp.edge_a, 0);
                     var b = find_chain (sp.piece_b, sp.edge_b, 1);
@@ -659,6 +727,7 @@ namespace Singularity.Apps.Atelier {
             guard.lock ();
             double gap = frame < 300 ? cloth.seam_gap () : 0;
             cloth.set_gravity ((float) (9810 * ((30 - gap) / 22).clamp (0, 1)));
+            if (!dressed) cloth.set_drag (frame < 300 && gap > 5 ? 0.9f : (frame < 420 ? 0.97f : 1.0f));
             cloth.step (1.0f / 60, substeps);
             frame++;
             publish ();

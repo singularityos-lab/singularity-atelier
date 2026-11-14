@@ -1303,6 +1303,8 @@ namespace Singularity.Apps.Atelier {
                 b.add_double_value (sp.a1);
                 b.add_double_value (sp.b0);
                 b.add_double_value (sp.b1);
+                b.add_int_value (sp.copy_a);
+                b.add_int_value (sp.copy_b);
                 b.end_array ();
             }
             b.end_array ();
@@ -1368,6 +1370,10 @@ namespace Singularity.Apps.Atelier {
                         sp.a1 = a.get_double_element (7);
                         sp.b0 = a.get_double_element (8);
                         sp.b1 = a.get_double_element (9);
+                    }
+                    if (a.get_length () >= 12) {
+                        sp.copy_a = (int) a.get_int_element (10);
+                        sp.copy_b = (int) a.get_int_element (11);
                     }
                     g.seams.add (sp);
                 }

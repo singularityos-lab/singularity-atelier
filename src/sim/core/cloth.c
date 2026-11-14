@@ -63,6 +63,7 @@ struct _AtCloth {
     const AtSdf *sdf;
     float offset;
     float gravity;
+    float drag;
     float edge;
 
     int *grab_i;
@@ -84,6 +85,7 @@ struct _AtCloth {
 AtCloth *at_cloth_new (void) {
     AtCloth *c = calloc (1, sizeof (AtCloth));
     c->gravity = 9810.0f;
+    c->drag = 1.0f;
     c->offset = 2.0f;
     return c;
 }
@@ -342,6 +344,10 @@ void at_cloth_separate (AtCloth *c, float extra) {
     }
     memcpy (c->p, c->x, (size_t) c->n * 3 * sizeof (float));
     memset (c->v, 0, (size_t) c->n * 3 * sizeof (float));
+}
+
+void at_cloth_set_drag (AtCloth *c, float keep) {
+    c->drag = keep;
 }
 
 void at_cloth_set_gravity (AtCloth *c, float g) {
@@ -731,7 +737,7 @@ void at_cloth_step (AtCloth *c, float dt, int substeps) {
                 p[i * 3 + 2] = x[i * 3 + 2];
                 continue;
             }
-            float keep = 1.0f - c->damp[i] * h * 60.0f;
+            float keep = (1.0f - c->damp[i] * h * 60.0f) * c->drag;
             if (keep < 0) keep = 0;
             v[i * 3] *= keep;
             v[i * 3 + 1] = (v[i * 3 + 1] - c->gravity * h) * keep;

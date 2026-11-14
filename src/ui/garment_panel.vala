@@ -79,7 +79,7 @@ namespace Singularity.Apps.Atelier {
             pages.vhomogeneous = false;
             pages.transition_type = StackTransitionType.CROSSFADE;
             pages.add_titled (simulation_page (), "simulation", _("Simulation"));
-            pages.add_titled (avatar_page (), "avatar", _("Avatar"));
+            if (project.trade != "leather") pages.add_titled (avatar_page (), "avatar", _("Avatar"));
             pages.add_titled (fabric_page (), "fabric", _("Fabric"));
             var tabs = new BubbleSwitcher (pages);
             tabs.margin_top = 4;
@@ -142,7 +142,7 @@ namespace Singularity.Apps.Atelier {
                 string kind = id;
                 Dialogs.button_row (start, Samples.garment_label (kind), null, _("Use"), () => use_block (kind));
             }
-            page.append (start);
+            if (project.trade != "leather") page.append (start);
 
                         var sewing = new PreferencesGroup (_("Sewing"), _("Sew edges in the pattern window with the sewing tools."));
             Dialogs.header_button (sewing, _("Auto Sew"), () => {
@@ -653,7 +653,7 @@ namespace Singularity.Apps.Atelier {
             var result = project.pattern.evaluate (size);
             canvas.show_size (size);
             if (result.pieces.size > 0) {
-                sim = new GarmentSim (result, project.garment, body);
+                sim = new GarmentSim (result, project.garment, body, project.trade != "leather");
                 sim.map = fit_map;
                 sim.sync ();
             }
@@ -678,7 +678,7 @@ namespace Singularity.Apps.Atelier {
 
         private void show_scene () {
             var list = new Gee.ArrayList<Scene.Mesh> ();
-            if (body != null) {
+            if (body != null && project.trade != "leather") {
                 list.add (body.mesh);
                 foreach (var extra in body.extras) list.add (extra);
             }

@@ -153,6 +153,14 @@ namespace Singularity.Apps.Atelier {
                 fleece.weave_scale = 0.7;
                 fleece.sheen = 0.4;
                 cache.add (fleece);
+                var saddle = new FabricPreset ("saddle", _("Firm Leather"), 4e-7, 2e-6, 0.004, 1150, 0.6, 1.8);
+                saddle.color = Rgba (0.50, 0.30, 0.17, 1);
+                saddle.roughness = 0.5;
+                saddle.physics (60000, 60000, 30000, 5000, 5000);
+                saddle.weave = 0;
+                saddle.sheen = 0;
+                saddle.damping = 0.12;
+                cache.add (saddle);
                 var chiffon = new FabricPreset ("chiffon", _("Chiffon"), 6e-6, 3e-5, 0.9, 45, 0.2, 0.15);
                 chiffon.color = Rgba (0.93, 0.88, 0.86, 1);
                 chiffon.physics (3500, 4200, 120, 0.5, 0.7);

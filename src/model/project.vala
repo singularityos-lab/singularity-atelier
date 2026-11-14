@@ -61,6 +61,8 @@ namespace Singularity.Apps.Atelier {
         public double a1 = 1;
         public double b0;
         public double b1 = 1;
+        public int copy_a = -1;
+        public int copy_b = -1;
 
         public SeamPair (string piece_a, int edge_a, string piece_b, int edge_b) {
             this.piece_a = piece_a;
@@ -141,6 +143,9 @@ namespace Singularity.Apps.Atelier {
                 case "leather":
                     p.flats.add_all (Flats.build ("tote"));
                     Samples.tote_pattern (p.pattern);
+                    Samples.tote_seams (p);
+                    p.garment.fabric_preset = "saddle";
+                    p.garment.auto_sew = false;
                     p.techpack = TechPack.sample ();
                     p.techpack.poms.clear ();
                     p.techpack.style_name = _("Tote Bag");

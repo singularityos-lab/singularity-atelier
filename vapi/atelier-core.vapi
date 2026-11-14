@@ -43,6 +43,7 @@ namespace AtCore {
         public void set_collider (Sdf? sdf, float offset);
         public void separate (float extra);
         public void set_gravity (float g);
+        public void set_drag (float keep);
         public void pin (int i, int pinned);
         public void grab (int i, float x, float y, float z, float radius);
         public void grab_move (float x, float y, float z);

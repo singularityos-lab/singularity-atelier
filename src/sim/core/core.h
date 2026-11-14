@@ -38,6 +38,7 @@ void at_cloth_finalize (AtCloth *c);
 void at_cloth_set_collider (AtCloth *c, const AtSdf *sdf, float offset);
 void at_cloth_separate (AtCloth *c, float extra);
 void at_cloth_set_gravity (AtCloth *c, float g);
+void at_cloth_set_drag (AtCloth *c, float keep);
 void at_cloth_pin (AtCloth *c, int i, int pinned);
 void at_cloth_grab (AtCloth *c, int i, float x, float y, float z, float radius);
 void at_cloth_grab_move (AtCloth *c, float x, float y, float z);

@@ -234,6 +234,42 @@ namespace Singularity.Apps.Atelier {
             }
         }
 
+        public void tote_seams (Project project) {
+            var p = project.pattern;
+            if (p.pieces.size < 3) return;
+            var panel = p.pieces[0];
+            var gusset = p.pieces[1];
+            var handle = p.pieces[2];
+            double h = 38, w = 40, total = h * 2 + w;
+            double[,] front = { { 3, 1 - h / total, 1 }, { 2, h / total, 1 - h / total }, { 1, 0, h / total } };
+            double[,] back = { { 3, (h + w) / total, 1 }, { 2, h / total, (h + w) / total }, { 1, 0, h / total } };
+            for (int i = 0; i < 3; i++) {
+                var a = new SeamPair (panel.id, (int) front[i, 0], gusset.id, 3);
+                a.reverse_b = false;
+                a.b0 = front[i, 1];
+                a.b1 = front[i, 2];
+                a.copy_a = 0;
+                a.copy_b = 0;
+                project.garment.seams.add (a);
+                var b = new SeamPair (panel.id, (int) back[i, 0], gusset.id, 1);
+                b.reverse_b = false;
+                b.b0 = back[i, 1];
+                b.b1 = back[i, 2];
+                b.copy_a = 1;
+                b.copy_b = 0;
+                project.garment.seams.add (b);
+            }
+            double[] at = { 0.25, 0.75 };
+            int[] ends = { 0, 2 };
+            for (int i = 0; i < 2; i++) {
+                var sp = new SeamPair (handle.id, ends[i], panel.id, 0);
+                sp.reverse_b = i == 1;
+                sp.b0 = at[i] - 0.0375;
+                sp.b1 = at[i] + 0.0375;
+                project.garment.seams.add (sp);
+            }
+        }
+
         public void tote_pattern (Pattern p) {
             p.unit = "cm";
             p.increments.add (new Increment ("width", "40"));
@@ -246,6 +282,8 @@ namespace Singularity.Apps.Atelier {
             var panel = piece (p, _("Front Panel"), { a.id, b.id, c.id, d.id }, { false, false, false, false });
             panel.material = "leather";
             panel.quantity = 2;
+            panel.pair = true;
+            panel.placement = "bag-panel";
             panel.seam_allowance = "1";
             panel.thickness = 1.4;
             panel.leather_turn = "1.2";
@@ -255,6 +293,7 @@ namespace Singularity.Apps.Atelier {
             var g3 = end_line (p, "G4", g0, "#height * 2 + #width", "270");
             var gusset = piece (p, _("Gusset"), { g0.id, g1.id, g2.id, g3.id }, { false, false, false, false });
             gusset.material = "leather";
+            gusset.placement = "bag-gusset";
             gusset.seam_allowance = "1";
             gusset.thickness = 1.4;
             var h0 = base_pt (p, "H", "70", "0");
@@ -264,6 +303,8 @@ namespace Singularity.Apps.Atelier {
             var handle = piece (p, _("Handle"), { h0.id, h1.id, h2.id, h3.id }, { false, false, false, false });
             handle.material = "leather";
             handle.quantity = 2;
+            handle.pair = true;
+            handle.placement = "bag-handle";
             handle.built_in = true;
             handle.thickness = 2.5;
             handle.leather_skive = "0.8";
