@@ -149,6 +149,7 @@ namespace Singularity.Apps.Atelier {
 
         public void garment (Project project, string id) {
             clear (project);
+            project.garment.auto_sew = id == "tshirt";
             switch (id) {
                 case "skirt":
                     skirt_pattern (project);

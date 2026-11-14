@@ -631,6 +631,13 @@ namespace Singularity.Apps.Atelier {
             b.begin_object ();
             b.set_member_name ("seam");
             pts (b, g.seam);
+            if (g.nodes.length > 0) {
+                b.set_member_name ("nodes");
+                pts (b, g.nodes);
+                b.set_member_name ("smooth").begin_array ();
+                foreach (bool sm in g.smooth) b.add_boolean_value (sm);
+                b.end_array ();
+            }
             b.set_member_name ("cut");
             pts (b, g.cut);
             b.set_member_name ("notches").begin_array ();
@@ -662,6 +669,13 @@ namespace Singularity.Apps.Atelier {
             var g = new FixedGeometry ();
             g.seam = read_pts (arr (o, "seam"));
             g.cut = read_pts (arr (o, "cut"));
+            g.nodes = read_pts (arr (o, "nodes"));
+            var sm = arr (o, "smooth");
+            if (sm != null && sm.get_length () == g.nodes.length) {
+                g.smooth = new bool[g.nodes.length];
+                for (int i = 0; i < g.nodes.length; i++) g.smooth[i] = sm.get_boolean_element (i);
+            }
+            if (g.nodes.length >= 3) g.rebuild ();
             var na = arr (o, "notches");
             if (na != null) {
                 foreach (var e in na.get_elements ()) {
@@ -1248,6 +1262,7 @@ namespace Singularity.Apps.Atelier {
             b.set_member_name ("gender").add_string_value (g.avatar_gender);
             b.set_member_name ("resolution").add_int_value (g.resolution);
             b.set_member_name ("environment").add_string_value (g.environment);
+            b.set_member_name ("auto_sew").add_boolean_value (g.auto_sew);
             b.set_member_name ("avatar").begin_object ();
             foreach (var ak in sorted (g.avatar.keys)) b.set_member_name (ak).add_double_value (g.avatar[ak]);
             b.end_object ();
@@ -1300,6 +1315,7 @@ namespace Singularity.Apps.Atelier {
             g.avatar_gender = s (o, "gender", "");
             g.resolution = (int) n (o, "resolution", 18);
             g.environment = s (o, "environment", "studio");
+            if (o.has_member ("auto_sew")) g.auto_sew = o.get_boolean_member ("auto_sew");
             var av = obj (o, "avatar");
             if (av != null) foreach (var k in av.get_members ()) g.avatar[k] = av.get_double_member (k);
             var fa = arr (o, "fabrics");

@@ -20,6 +20,7 @@ namespace Singularity.Apps.Atelier {
         private ActionRow status_row;
         private Button simulate_button;
         private Box seam_box;
+        private Box shape_box;
         private Box measure_box;
         private Box fabric_list;
         private Box fabric_props;
@@ -46,6 +47,9 @@ namespace Singularity.Apps.Atelier {
 
             palette = new ToolPalette ();
             palette.add_tool ("select", "atelier-pointer-symbolic", _("Select (A)"));
+            palette.add_tool ("edit", "atelier-point-symbolic", _("Edit Pattern (Z)"));
+            palette.add_tool ("rect", "atelier-piece-symbolic", _("Rectangle (S)"));
+            palette.add_tool ("polygon", "atelier-pen-symbolic", _("Polygon (H)"));
             palette.add_tool ("sew", "atelier-stitch-symbolic", _("Segment Sewing (N)"));
             palette.add_tool ("free-sew", "atelier-seam-walk-symbolic", _("Free Sewing (M)"));
             palette.add_tool ("edit-sew", "atelier-transform-symbolic", _("Edit Sewing (B)"));
@@ -56,7 +60,16 @@ namespace Singularity.Apps.Atelier {
                 if (sim != null) sim.reseam ();
                 view.queue_render ();
             });
+            canvas.pattern_changed.connect (() => {
+                stop ();
+                stale = true;
+                ensure_sim ();
+                rebuild_fabric_list ();
+                status_row.title = _("Ready");
+                status_row.subtitle = _("Pattern changed, not simulated yet");
+            });
             canvas.selection_changed.connect (() => {
+                rebuild_shape_box ();
                 rebuild_seam_box ();
                 rebuild_piece_box ();
                 view.queue_render ();
@@ -144,6 +157,8 @@ namespace Singularity.Apps.Atelier {
             page.append (sewing);
             seam_box = new Box (Orientation.VERTICAL, 0);
             page.append (seam_box);
+            shape_box = new Box (Orientation.VERTICAL, 0);
+            page.append (shape_box);
 
             var fit = new PreferencesGroup (_("Fit Map"));
             string[] maps = { "material", "strain", "distance", "wireframe" };
@@ -471,6 +486,56 @@ namespace Singularity.Apps.Atelier {
                 g.add_row (row);
             }
             piece_box.append (g);
+        }
+
+        private const string[] PLACEMENTS = { "front", "back", "sleeve", "skirt-front", "skirt-back", "leg-front", "leg-back" };
+
+        private static string placement_label (string id) {
+            switch (id) {
+                case "back": return _("Back");
+                case "sleeve": return _("Sleeves");
+                case "skirt-front": return _("Front, from the Waist");
+                case "skirt-back": return _("Back, from the Waist");
+                case "leg-front": return _("Front of the Legs");
+                case "leg-back": return _("Back of the Legs");
+                default: return _("Front");
+            }
+        }
+
+        private void rebuild_shape_box () {
+            Widget? c;
+            while ((c = shape_box.get_first_child ()) != null) shape_box.remove (c);
+            var piece = project.pattern.find_piece (canvas.selected_piece);
+            if (piece == null) return;
+            var g = new PreferencesGroup (piece.name);
+            var name_row = new EntryRow (_("Name"));
+            name_row.text = piece.name;
+            name_row.entry_activated.connect (() => {
+                if (name_row.text.strip () == "") return;
+                piece.name = name_row.text.strip ();
+                canvas.piece_edited ();
+                rebuild_shape_box ();
+                rebuild_piece_box ();
+            });
+            g.add_row (name_row);
+            string[] labels = {};
+            foreach (unowned string id in PLACEMENTS) labels += placement_label (id);
+            var place_row = new SelectionRow (_("Arrangement"), labels, placement_label (piece.placement));
+            place_row.selected.connect ((label) => {
+                foreach (unowned string id in PLACEMENTS) if (placement_label (id) == label) piece.placement = id;
+                if (piece.placement == "sleeve" || piece.placement.has_prefix ("leg-")) piece.pair = true;
+                canvas.piece_edited ();
+            });
+            g.add_row (place_row);
+            var pair_row = new SwitchRow (_("Symmetric Pair"), _("Cuts and places a mirrored second piece"));
+            pair_row.active = piece.pair;
+            pair_row.notify["active"].connect (() => {
+                piece.pair = pair_row.active;
+                canvas.piece_edited ();
+            });
+            g.add_row (pair_row);
+            Dialogs.button_row (g, _("Remove the Piece"), null, _("Remove"), () => canvas.delete_piece (piece.id));
+            shape_box.append (g);
         }
 
         private void rebuild_seam_box () {

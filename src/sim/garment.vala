@@ -199,7 +199,8 @@ namespace Singularity.Apps.Atelier {
             }
             cloth.finalize ();
             cloth.separate (3);
-            if (settings.seams.size == 0) settings.seams.add_all (auto_seams (result));
+            if (settings.seams.size == 0 && settings.auto_sew) settings.seams.add_all (auto_seams (result));
+            settings.auto_sew = false;
             apply_seams ();
             scratch = new float[cloth.count ()];
             sync ();

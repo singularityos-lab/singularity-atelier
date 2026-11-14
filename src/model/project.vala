@@ -8,6 +8,7 @@ namespace Singularity.Apps.Atelier {
         public Gee.HashMap<string, double?> avatar = new Gee.HashMap<string, double?> ();
         public string pose = "a-pose";
         public string avatar_gender = "";
+        public bool auto_sew = true;
 
         public void ensure_fabrics () {
             if (fabrics.size == 0) {

@@ -338,6 +338,16 @@ namespace Singularity.Apps.Atelier {
                 case "gclick":
                     win.garment_canvas.click_at (point (a[1]));
                     return 300;
+                case "gdrag":
+                    win.garment_canvas.drag_between (point (a[1]), point (a[2]));
+                    return 400;
+                case "gremove":
+                    while (win.project.pattern.pieces.size > 0) win.garment_canvas.delete_piece (win.project.pattern.pieces[0].id);
+                    return 400;
+                case "gnode":
+                    if (a[1] == "toggle") win.garment_canvas.toggle_node ();
+                    else win.garment_canvas.delete_node ();
+                    return 400;
                 case "gfit":
                     win.garment_canvas.fit_all ();
                     return 300;

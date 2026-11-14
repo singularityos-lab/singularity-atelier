@@ -195,8 +195,60 @@ namespace Singularity.Apps.Atelier {
         public Point grain_b = Point (0, 0);
         public bool has_grain;
 
+        public Point[] nodes = {};
+        public bool[] smooth = {};
+        public int[] starts = {};
+
+        private static Point spline (Point p0, Point p1, Point p2, Point p3, double t) {
+            double t2 = t * t, t3 = t2 * t;
+            return Point (0.5 * (2 * p1.x + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
+                          0.5 * (2 * p1.y + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3));
+        }
+
+        public void rebuild () {
+            int n = nodes.length;
+            if (n < 3) return;
+            if (smooth.length != n) smooth = new bool[n];
+            int first = 0;
+            while (first < n && smooth[first]) first++;
+            if (first == n) first = 0;
+            Point[] outline = {};
+            int[] begin = {};
+            for (int k = 0; k < n; k++) {
+                int i = (first + k) % n, j = (i + 1) % n;
+                if (!smooth[i] || k == 0) begin += outline.length;
+                outline += nodes[i];
+                if (!smooth[i] && !smooth[j]) continue;
+                var p0 = smooth[i] ? nodes[(i + n - 1) % n] : nodes[i];
+                var p3 = smooth[j] ? nodes[(j + 1) % n] : nodes[j];
+                for (int q = 1; q < 8; q++) outline += spline (p0, nodes[i], nodes[j], p3, q / 8.0);
+            }
+            seam = outline;
+            cut = {};
+            starts = begin;
+        }
+
+        public int[] edge_starts () {
+            if (starts.length >= 2) return starts;
+            int n = seam.length;
+            int[] found = {};
+            for (int i = 0; i < n; i++) {
+                var a = seam[(i + n - 1) % n];
+                var b = seam[i];
+                var c = seam[(i + 1) % n];
+                double a1 = Math.atan2 (b.y - a.y, b.x - a.x), a2 = Math.atan2 (c.y - b.y, c.x - b.x);
+                double turn = (a2 - a1).abs ();
+                if (turn > Math.PI) turn = 2 * Math.PI - turn;
+                if (turn > 0.5) found += i;
+            }
+            return found;
+        }
+
         public FixedGeometry copy () {
             var g = new FixedGeometry ();
+            g.nodes = nodes;
+            g.smooth = smooth;
+            g.starts = starts;
             g.seam = seam;
             g.cut = cut;
             foreach (var n in notches) g.notches.add (new FixedNotch (n.at, n.angle, n.type, n.length));
@@ -209,6 +261,7 @@ namespace Singularity.Apps.Atelier {
         }
 
         public void translate (double dx, double dy) {
+            nodes = shift (nodes, dx, dy);
             seam = shift (seam, dx, dy);
             cut = shift (cut, dx, dy);
             foreach (var n in notches) n.at = Point (n.at.x + dx, n.at.y + dy);
@@ -1029,7 +1082,21 @@ namespace Singularity.Apps.Atelier {
                 g.grain_a = fg.grain_a;
                 g.grain_b = fg.grain_b;
                 g.has_grain = fg.has_grain;
-                g.edges.add (new PointList (g.seam));
+                var begin = fg.edge_starts ();
+                if (begin.length < 2) {
+                    g.edges.add (new PointList (g.seam));
+                    return g;
+                }
+                int total = g.seam.length;
+                for (int e = 0; e < begin.length; e++) {
+                    int from = begin[e], to = begin[(e + 1) % begin.length];
+                    Point[] run = {};
+                    for (int i = from; ; i = (i + 1) % total) {
+                        run += g.seam[i];
+                        if (i == to && run.length > 1) break;
+                    }
+                    g.edges.add (new PointList (run));
+                }
                 return g;
             }
             var edges = new Gee.ArrayList<OffsetEdge> ();

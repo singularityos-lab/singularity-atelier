@@ -19,9 +19,16 @@ namespace Singularity.Apps.Atelier {
         private double pending_t2 = -1;
         private int free_step;
         private Gee.HashMap<string, Point?> offsets = new Gee.HashMap<string, Point?> ();
+        private Point[] draft = {};
+        private Point draft_at;
+        private bool dragging_rect;
+        private string node_piece = "";
+        private int node_index = -1;
+        private bool node_moved;
 
         public signal void selection_changed ();
         public signal void seams_changed ();
+        public signal void pattern_changed ();
         public signal void tool_changed ();
         public signal void message (string text);
 
@@ -112,6 +119,8 @@ namespace Singularity.Apps.Atelier {
         }
 
         private void cancel () {
+            draft = {};
+            dragging_rect = false;
             pending_piece = "";
             pending_edge = -1;
             pending_t2 = -1;
@@ -456,11 +465,54 @@ namespace Singularity.Apps.Atelier {
             }
         }
 
+        protected override void draw_overlay (Cairo.Context cr, int w, int h) {
+            cr.save ();
+            cr.transform (view_matrix ());
+            cr.set_source_rgba (0.16, 0.5, 0.96, 1);
+            cr.set_line_width (1.6 / zoom);
+            if (tool == "rect" && dragging_rect && draft.length == 1) {
+                cr.rectangle (double.min (draft[0].x, draft_at.x), double.min (draft[0].y, draft_at.y), (draft_at.x - draft[0].x).abs (), (draft_at.y - draft[0].y).abs ());
+                cr.stroke ();
+            }
+            if (tool == "polygon" && draft.length > 0) {
+                path (cr, draft, false);
+                cr.line_to (hover_at.x, hover_at.y);
+                cr.stroke ();
+                foreach (var q in draft) {
+                    cr.arc (q.x, q.y, 4 / zoom, 0, 2 * Math.PI);
+                    cr.fill ();
+                }
+            }
+            if (tool == "edit" && result != null) {
+                foreach (var g in result.pieces) {
+                    var pc = free_piece (g.piece.id);
+                    if (pc == null) continue;
+                    var o = offset_of (pc.id);
+                    for (int i = 0; i < pc.fixed.nodes.length; i++) {
+                        var q = pc.fixed.nodes[i];
+                        bool active = pc.id == node_piece && i == node_index;
+                        cr.set_source_rgba (1, 1, 1, 1);
+                        if (pc.fixed.smooth[i]) cr.arc (q.x + o.x, q.y + o.y, (active ? 5.5 : 4.5) / zoom, 0, 2 * Math.PI);
+                        else cr.rectangle (q.x + o.x - 4.5 / zoom, q.y + o.y - 4.5 / zoom, 9 / zoom, 9 / zoom);
+                        cr.fill_preserve ();
+                        if (active) cr.set_source_rgba (0.96, 0.55, 0.12, 1);
+                        else cr.set_source_rgba (0.16, 0.5, 0.96, 1);
+                        cr.set_line_width (1.8 / zoom);
+                        cr.stroke ();
+                    }
+                }
+            }
+            cr.restore ();
+        }
+
+        private Point hover_at;
         private double free_b0;
         private string free_b_piece = "";
         private int free_b_edge = -1;
 
         protected override void hover (Point p) {
+            hover_at = p;
+            if (tool == "polygon" && draft.length > 0) queue_draw ();
             string piece;
             int edge;
             double t;
@@ -545,6 +597,22 @@ namespace Singularity.Apps.Atelier {
                     selected_seam = seam_under (p);
                     selection_changed ();
                     break;
+                case "rect":
+                    draft = { p };
+                    draft_at = p;
+                    dragging_rect = true;
+                    break;
+                case "polygon":
+                    if (draft.length >= 3 && draft[0].distance (p) < 10 / zoom) {
+                        finish_polygon ();
+                        break;
+                    }
+                    draft += p;
+                    draft_at = p;
+                    break;
+                case "edit":
+                    begin_edit (p);
+                    break;
                 default:
                     int seam = seam_under (p);
                     selected_seam = seam;
@@ -553,6 +621,203 @@ namespace Singularity.Apps.Atelier {
                     break;
             }
             queue_draw ();
+        }
+
+        private Piece? free_piece (string id) {
+            var pc = project.pattern.find_piece (id);
+            return pc != null && pc.fixed != null && pc.fixed.nodes.length >= 3 ? pc : null;
+        }
+
+        private void create_piece (Point[] nodes) {
+            var pc = new Piece (project.pattern.new_id ("d"), _("Piece %d").printf (project.pattern.pieces.size + 1));
+            pc.fixed = new FixedGeometry ();
+            pc.fixed.nodes = nodes;
+            pc.fixed.smooth = new bool[nodes.length];
+            pc.fixed.rebuild ();
+            pc.placement = "front";
+            project.pattern.pieces.add (pc);
+            selected_piece = pc.id;
+            selected_seam = -1;
+            commit_pattern ();
+            selection_changed ();
+        }
+
+        private void commit_pattern () {
+            project.touch ("pattern");
+            result = project.pattern.evaluate (size);
+            layout ();
+            pattern_changed ();
+            queue_draw ();
+        }
+
+        private void finish_polygon () {
+            var nodes = draft;
+            draft = {};
+            if (nodes.length >= 3) create_piece (nodes);
+        }
+
+        private void drop_seams (string piece_id) {
+            for (int i = project.garment.seams.size - 1; i >= 0; i--) {
+                var sp = project.garment.seams[i];
+                if (sp.piece_a == piece_id || sp.piece_b == piece_id) project.garment.seams.remove_at (i);
+            }
+            selected_seam = -1;
+        }
+
+        private void begin_edit (Point p) {
+            node_piece = "";
+            node_index = -1;
+            node_moved = false;
+            if (result == null) return;
+            double best = 10 / zoom;
+            foreach (var g in result.pieces) {
+                var pc = free_piece (g.piece.id);
+                if (pc == null) continue;
+                var o = offset_of (pc.id);
+                for (int i = 0; i < pc.fixed.nodes.length; i++) {
+                    double d = Math.hypot (pc.fixed.nodes[i].x + o.x - p.x, pc.fixed.nodes[i].y + o.y - p.y);
+                    if (d < best) {
+                        best = d;
+                        node_piece = pc.id;
+                        node_index = i;
+                    }
+                }
+            }
+            if (node_index >= 0) {
+                selected_piece = node_piece;
+                selection_changed ();
+                return;
+            }
+            string piece;
+            int edge;
+            double t;
+            if (!edge_under (p, out piece, out edge, out t)) return;
+            var pc = free_piece (piece);
+            if (pc == null) {
+                message (_("Only pieces drawn here can be reshaped, drafted pieces follow their formulas"));
+                return;
+            }
+            var o = offset_of (piece);
+            var local = Point (p.x - o.x, p.y - o.y);
+            int n = pc.fixed.nodes.length;
+            int after = 0;
+            double near = double.INFINITY;
+            for (int i = 0; i < n; i++) {
+                double d = PathData.segment_distance (pc.fixed.nodes[i], pc.fixed.nodes[(i + 1) % n], local.x, local.y);
+                if (d < near) {
+                    near = d;
+                    after = i;
+                }
+            }
+            Point[] nodes = {};
+            bool[] smooth = {};
+            for (int i = 0; i < n; i++) {
+                nodes += pc.fixed.nodes[i];
+                smooth += pc.fixed.smooth[i];
+                if (i == after) {
+                    nodes += local;
+                    smooth += true;
+                }
+            }
+            pc.fixed.nodes = nodes;
+            pc.fixed.smooth = smooth;
+            pc.fixed.rebuild ();
+            node_piece = piece;
+            node_index = after + 1;
+            node_moved = true;
+            selected_piece = piece;
+            result = project.pattern.evaluate (size);
+            selection_changed ();
+        }
+
+        protected override void move (Point p, Gdk.ModifierType mods, StrokeSample s) {
+            if (tool == "rect" && dragging_rect) {
+                draft_at = p;
+                queue_draw ();
+                return;
+            }
+            if (tool != "edit" || node_index < 0) return;
+            var pc = free_piece (node_piece);
+            if (pc == null) return;
+            var o = offset_of (node_piece);
+            pc.fixed.nodes[node_index] = Point (p.x - o.x, p.y - o.y);
+            pc.fixed.rebuild ();
+            node_moved = true;
+            result = project.pattern.evaluate (size);
+            queue_draw ();
+        }
+
+        protected override void release (Point p, Gdk.ModifierType mods) {
+            if (tool == "rect" && dragging_rect) {
+                dragging_rect = false;
+                var a = draft[0];
+                draft = {};
+                if ((p.x - a.x).abs () > 20 && (p.y - a.y).abs () > 20) {
+                    double x0 = double.min (a.x, p.x), x1 = double.max (a.x, p.x), y0 = double.min (a.y, p.y), y1 = double.max (a.y, p.y);
+                    create_piece ({ Point (x0, y0), Point (x1, y0), Point (x1, y1), Point (x0, y1) });
+                }
+                queue_draw ();
+                return;
+            }
+            if (tool == "edit" && node_index >= 0 && node_moved) {
+                node_moved = false;
+                commit_pattern ();
+            }
+        }
+
+        public void toggle_node () {
+            var pc = free_piece (node_piece);
+            if (pc == null || node_index < 0 || node_index >= pc.fixed.nodes.length) return;
+            pc.fixed.smooth[node_index] = !pc.fixed.smooth[node_index];
+            pc.fixed.rebuild ();
+            drop_seams (pc.id);
+            seams_changed ();
+            commit_pattern ();
+        }
+
+        public void delete_node () {
+            var pc = free_piece (node_piece);
+            if (pc == null || node_index < 0 || pc.fixed.nodes.length <= 3) return;
+            Point[] nodes = {};
+            bool[] smooth = {};
+            for (int i = 0; i < pc.fixed.nodes.length; i++) {
+                if (i == node_index) continue;
+                nodes += pc.fixed.nodes[i];
+                smooth += pc.fixed.smooth[i];
+            }
+            bool corner = !pc.fixed.smooth[node_index];
+            pc.fixed.nodes = nodes;
+            pc.fixed.smooth = smooth;
+            pc.fixed.rebuild ();
+            node_index = -1;
+            if (corner) {
+                drop_seams (pc.id);
+                seams_changed ();
+            }
+            commit_pattern ();
+        }
+
+        public void delete_piece (string id) {
+            var pc = project.pattern.find_piece (id);
+            if (pc == null) return;
+            drop_seams (id);
+            project.pattern.pieces.remove (pc);
+            project.garment.piece_fabrics.unset (id);
+            if (selected_piece == id) selected_piece = "";
+            seams_changed ();
+            commit_pattern ();
+            selection_changed ();
+        }
+
+        public void piece_edited () {
+            commit_pattern ();
+        }
+
+        public void drag_between (Point a, Point b) {
+            hover (a);
+            press (a, Gdk.BUTTON_PRIMARY, 0, StrokeSample (a.x, a.y, 1, 0, 0, 0));
+            move (b, 0, StrokeSample (b.x, b.y, 1, 0, 0, 0));
+            release (b, 0);
         }
 
         public void click_at (Point p) {
@@ -604,7 +869,28 @@ namespace Singularity.Apps.Atelier {
                     return true;
                 case Gdk.Key.Delete:
                 case Gdk.Key.BackSpace:
-                    delete_selected_seam ();
+                    if (tool == "edit") delete_node ();
+                    else delete_selected_seam ();
+                    return true;
+                case Gdk.Key.Return:
+                case Gdk.Key.KP_Enter:
+                    if (tool == "polygon") finish_polygon ();
+                    return true;
+                case Gdk.Key.c:
+                case Gdk.Key.C:
+                    if (tool == "edit") toggle_node ();
+                    return true;
+                case Gdk.Key.s:
+                case Gdk.Key.S:
+                    choose_tool ("rect");
+                    return true;
+                case Gdk.Key.h:
+                case Gdk.Key.H:
+                    choose_tool ("polygon");
+                    return true;
+                case Gdk.Key.z:
+                case Gdk.Key.Z:
+                    choose_tool ("edit");
                     return true;
                 case Gdk.Key.a:
                 case Gdk.Key.A:
@@ -635,6 +921,9 @@ namespace Singularity.Apps.Atelier {
                     if (free_step == 2) return _("Click where it starts on the other edge");
                     return _("Click where it ends");
                 case "edit-sew": return _("Click a seam to select it, Delete removes it");
+                case "rect": return _("Drag to draw a rectangular piece");
+                case "polygon": return _("Click the corners, close on the first one or press Enter");
+                case "edit": return _("Drag a point, drag an edge to curve it, C toggles corner and curve, Delete removes a point");
                 default: return _("Click a piece or a seam");
             }
         }
