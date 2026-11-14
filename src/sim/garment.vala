@@ -121,13 +121,13 @@ namespace Singularity.Apps.Atelier {
         private void build_collider () {
             var m = body.mesh;
             sdf = AtCore.Sdf.build (m.positions, m.vertex_count, m.triangles, m.triangles.length, 8, 70);
-            cloth.set_collider (sdf, 2.5f);
+            cloth.set_collider (sdf, (float) (2 + spacing * 0.13));
         }
 
         public void set_body (Body next) {
             guard.lock ();
             body = next;
-            cloth.set_collider (null, 2.5f);
+            cloth.set_collider (null, 0);
             build_collider ();
             guard.unlock ();
         }
@@ -569,6 +569,22 @@ namespace Singularity.Apps.Atelier {
                 }
             }
             return list;
+        }
+
+        public void reseam () {
+            guard.lock ();
+            apply_seams ();
+            frame = 0;
+            guard.unlock ();
+        }
+
+        public void auto_sew (PatternResult result) {
+            guard.lock ();
+            settings.seams.clear ();
+            settings.seams.add_all (auto_seams (result));
+            apply_seams ();
+            frame = 0;
+            guard.unlock ();
         }
 
         public int stitch_count () {

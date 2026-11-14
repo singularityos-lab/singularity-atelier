@@ -6,6 +6,9 @@ namespace Singularity.Apps.Atelier {
     public class GarmentPanel : InspectorPanel {
         private Project project;
         private View3D view;
+        private GarmentCanvas canvas;
+        private Box seam_box;
+        public ToolPalette palette { get; private set; }
         private GarmentSim? sim;
         private Body? body;
         private string body_key = "";
@@ -28,9 +31,26 @@ namespace Singularity.Apps.Atelier {
 
         public signal void message (string text);
 
-        public GarmentPanel (Project project, View3D view) {
+        public GarmentPanel (Project project, View3D view, GarmentCanvas canvas) {
             this.project = project;
             this.view = view;
+            this.canvas = canvas;
+            palette = new ToolPalette ();
+            palette.add_tool ("select", "atelier-pointer-symbolic", _("Select (A)"));
+            palette.add_tool ("sew", "atelier-stitch-symbolic", _("Segment Sewing (N)"));
+            palette.add_tool ("free-sew", "atelier-seam-walk-symbolic", _("Free Sewing (M)"));
+            palette.add_tool ("edit-sew", "atelier-transform-symbolic", _("Edit Sewing (B)"));
+            palette.set_active (canvas.tool);
+            palette.tool_selected.connect ((id) => canvas.choose_tool (id));
+            canvas.tool_changed.connect (() => palette.set_active (canvas.tool));
+            canvas.seams_changed.connect (() => {
+                if (sim != null) sim.reseam ();
+                view.queue_render ();
+            });
+            canvas.selection_changed.connect (() => {
+                rebuild_seam_box ();
+                view.queue_render ();
+            });
             size = project.pattern.active_size != "" ? project.pattern.active_size : project.pattern.table.base_size;
 
             var avatar = new PreferencesGroup (_("Avatar"));
@@ -74,6 +94,20 @@ namespace Singularity.Apps.Atelier {
             simg.add_row (spacing);
             append (simg);
 
+            var sewing = new PreferencesGroup (_("Sewing"), _("Sew edges in the pattern window with the sewing tools."));
+            Dialogs.header_button (sewing, _("Auto Sew"), () => {
+                if (sim == null) return;
+                sim.auto_sew (project.pattern.evaluate (size));
+                project.touch ("garment");
+                canvas.selected_seam = -1;
+                canvas.queue_draw ();
+                rebuild_seam_box ();
+                view.queue_render ();
+            }, false);
+            append (sewing);
+            seam_box = new Box (Orientation.VERTICAL, 0);
+            append (seam_box);
+
             var fabric = new PreferencesGroup (_("Fabric"));
             string[] labels = {};
             foreach (var f in FabricPreset.all ()) labels += f.name;
@@ -107,13 +141,15 @@ namespace Singularity.Apps.Atelier {
 
             view.overlay.connect ((o) => {
                 if (!get_mapped () || sim == null) return;
-                var accent = Gdk.RGBA () { red = 0.16f, green = 0.50f, blue = 0.96f, alpha = 0.9f };
-                int n = sim.stitch_count ();
+                    int n = sim.stitch_count ();
                 for (int i = 0; i < n; i++) {
                     Vec3 a, b;
-                    sim.stitch (i, out a, out b);
-                    if (a.distance (b) < 3) continue;
-                    o.line (Scene.Vec3 (a.x, a.y, a.z), Scene.Vec3 (b.x, b.y, b.z), accent, 1.2);
+                    int seam = sim.stitch (i, out a, out b);
+                    var c = GarmentCanvas.seam_color (seam);
+                    var col = Gdk.RGBA () { red = (float) c.r, green = (float) c.g, blue = (float) c.b, alpha = 0.9f };
+                    if (seam == canvas.selected_seam) o.point (Scene.Vec3 (a.x, a.y, a.z), col, 7);
+                    if (a.distance (b) < 6) continue;
+                    o.line (Scene.Vec3 (a.x, a.y, a.z), Scene.Vec3 (b.x, b.y, b.z), col, 1.2);
                 }
             });
             view.tool_pressed.connect (on_press);
@@ -170,6 +206,20 @@ namespace Singularity.Apps.Atelier {
             c.pitch = pitch;
             view.animate_to (c);
             return true;
+        }
+
+        private void rebuild_seam_box () {
+            Widget? c;
+            while ((c = seam_box.get_first_child ()) != null) seam_box.remove (c);
+            int index = canvas.selected_seam;
+            if (index < 0 || index >= project.garment.seams.size) return;
+            var g = new PreferencesGroup (canvas.seam_title (index));
+            double unit = project.pattern.unit_mm ();
+            var lengths = new ActionRow (_("Lengths"), "%s and %s %s".printf (Singularity.Vector.PathData.fmt (canvas.seam_length (index, false) / unit, 1), Singularity.Vector.PathData.fmt (canvas.seam_length (index, true) / unit, 1), project.pattern.unit));
+            g.add_row (lengths);
+            Dialogs.button_row (g, _("Direction"), _("Swaps which ends are sewn together"), _("Reverse"), () => canvas.reverse_selected_seam ());
+            Dialogs.button_row (g, _("Remove the Seam"), null, _("Remove"), () => canvas.delete_selected_seam ());
+            seam_box.append (g);
         }
 
         private static FabricPreset preset_by_name (string label) {
@@ -232,6 +282,7 @@ namespace Singularity.Apps.Atelier {
             stale = false;
             sim = null;
             var result = project.pattern.evaluate (size);
+            canvas.show_size (size);
             if (result.pieces.size > 0) {
                 sim = new GarmentSim (result, project.garment, body);
                 sim.map = fit_map;

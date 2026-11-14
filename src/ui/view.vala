@@ -9,6 +9,7 @@ namespace Singularity.Apps.Atelier {
         public double pan_y = 40;
         public double rotation;
         public bool allow_rotation = true;
+        public bool wheel_zooms;
         public signal void view_changed ();
         public signal void drawn ();
         protected double pointer_x;
@@ -30,7 +31,7 @@ namespace Singularity.Apps.Atelier {
             var scroll = new EventControllerScroll (EventControllerScrollFlags.BOTH_AXES);
             scroll.scroll.connect ((dx, dy) => {
                 var st = scroll.get_current_event_state ();
-                if ((st & Gdk.ModifierType.CONTROL_MASK) != 0) {
+                if (wheel_zooms || (st & Gdk.ModifierType.CONTROL_MASK) != 0) {
                     zoom_at (pointer_x, pointer_y, dy < 0 ? 1.15 : 1 / 1.15);
                 } else if ((st & Gdk.ModifierType.SHIFT_MASK) != 0) {
                     pan_x -= dy * 30;

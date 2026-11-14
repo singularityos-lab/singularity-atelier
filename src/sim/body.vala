@@ -447,6 +447,7 @@ namespace Singularity.Apps.Atelier {
             b.pose = pose;
             b.morph ();
             b.measures = b.measure ();
+            b.flatten_tips ();
             b.apply_pose ();
             b.make_mesh ();
             return b;
@@ -486,6 +487,7 @@ namespace Singularity.Apps.Atelier {
             }
             data.add_dense (rest, g + (shape.stature < 0 ? ":minheight" : ":maxheight"), shape.stature.abs ().clamp (0, 1));
             if (g == "female") data.add_dense (rest, shape.cup < 0 ? "female:mincup" : "female:maxcup", shape.cup.abs ().clamp (0, 1.5));
+            data.add_sparse (rest, "breast-point-decr", 1);
             foreach (unowned string name in BodyShape.MEASURES) {
                 double v = shape.get_measure (name);
                 if (v != 0) data.add_sparse (rest, name + (v < 0 ? "-decr" : "-incr"), v.abs ());
@@ -499,6 +501,44 @@ namespace Singularity.Apps.Atelier {
                 rest[i * 3 + 2] *= s;
             }
             joints = joint_positions (rest);
+        }
+
+        private static double ramp (double v, double lo, double hi, double soft) {
+            if (v <= lo || v >= hi) return 0;
+            return double.min (1, double.min (v - lo, hi - v) / soft);
+        }
+
+        private void flatten_tips () {
+            unowned uint[] tri = data.triangles;
+            int n = data.nrender;
+            double front = joint ("spine02", false, false).z + 40 * shape.scale;
+            var weight = new float[n];
+            for (int i = 0; i < n; i++) {
+                if (data.part[i] != BodyData.PART_TORSO) continue;
+                double w = ramp (((double) rest[i * 3]).abs (), 30, 180, 25) * ramp (rest[i * 3 + 1], measures.y_bust - 110, measures.y_bust + 70, 25) * ((rest[i * 3 + 2] - front) / 25).clamp (0, 1);
+                weight[i] = (float) w;
+            }
+            var sum = new float[n * 3];
+            var count = new int[n];
+            for (int pass = 0; pass < 14; pass++) {
+                Memory.set (sum, 0, n * 3 * sizeof (float));
+                Memory.set (count, 0, n * sizeof (int));
+                for (int t = 0; t + 2 < tri.length; t += 3) {
+                    if (weight[tri[t]] == 0 && weight[tri[t + 1]] == 0 && weight[tri[t + 2]] == 0) continue;
+                    for (int e = 0; e < 3; e++) {
+                        uint a = tri[t + e], b = tri[t + (e + 1) % 3];
+                        sum[a * 3] += rest[b * 3];
+                        sum[a * 3 + 1] += rest[b * 3 + 1];
+                        sum[a * 3 + 2] += rest[b * 3 + 2];
+                        count[a]++;
+                    }
+                }
+                for (int i = 0; i < n; i++) {
+                    if (weight[i] == 0 || count[i] == 0) continue;
+                    float k = weight[i] * 0.55f;
+                    for (int c = 0; c < 3; c++) rest[i * 3 + c] += (sum[i * 3 + c] / count[i] - rest[i * 3 + c]) * k;
+                }
+            }
         }
 
         private float[] joint_positions (float[] pos) {
@@ -671,15 +711,41 @@ namespace Singularity.Apps.Atelier {
             has[bi] = true;
         }
 
+        private void soften (float[] pos, int n) {
+            unowned uint[] tri = data.triangles;
+            var sum = new float[n * 3];
+            var count = new int[n];
+            double[] factors = { 0.5, -0.52, 0.5, -0.52 };
+            foreach (double k in factors) {
+                Memory.set (sum, 0, n * 3 * sizeof (float));
+                Memory.set (count, 0, n * sizeof (int));
+                for (int t = 0; t + 2 < tri.length; t += 3) {
+                    for (int e = 0; e < 3; e++) {
+                        uint a = tri[t + e], b = tri[t + (e + 1) % 3];
+                        sum[a * 3] += pos[b * 3];
+                        sum[a * 3 + 1] += pos[b * 3 + 1];
+                        sum[a * 3 + 2] += pos[b * 3 + 2];
+                        count[a]++;
+                    }
+                }
+                for (int i = 0; i < n; i++) {
+                    if (count[i] == 0 || data.part[i] == BodyData.PART_HEAD || data.part[i] == BodyData.PART_ARM) continue;
+                    float f = (float) k;
+                    for (int c = 0; c < 3; c++) pos[i * 3 + c] += (sum[i * 3 + c] / count[i] - pos[i * 3 + c]) * f;
+                }
+            }
+        }
+
         private void make_mesh () {
             mesh = new Scene.Mesh ();
             mesh.name = "avatar";
             int n = data.nrender;
+            soften (posed, n);
             mesh.positions = posed[0:n * 3];
             mesh.triangles = data.triangles;
             mesh.compute_normals ();
-            mesh.material.color = Gdk.RGBA () { red = 0.80f, green = 0.78f, blue = 0.76f, alpha = 1 };
-            mesh.material.roughness = 0.62;
+            mesh.material.color = Gdk.RGBA () { red = 0.66f, green = 0.63f, blue = 0.61f, alpha = 1 };
+            mesh.material.roughness = 0.72;
             mesh.material.double_sided = false;
         }
 

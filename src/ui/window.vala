@@ -28,6 +28,9 @@ namespace Singularity.Apps.Atelier {
         public FlatsPanel? flats_panel;
         public TechPackView? techpack_view;
         public View3D? view3d;
+        public GarmentCanvas? garment_canvas;
+        private Paned? split3d;
+        private Widget? pattern_side;
         public GarmentPanel? garment_panel;
         public ProductPanel? product_panel;
         private Stack? panel3d_stack;
@@ -321,11 +324,30 @@ namespace Singularity.Apps.Atelier {
             work_stack.add_named (techpack_view, "techpack");
             side_stack.add_named (techpack_view.nav, "techpack");
             view3d = new View3D ();
-            work_stack.add_named (view3d, "3d");
+            garment_canvas = new GarmentCanvas (project);
+            split3d = new Paned (Orientation.HORIZONTAL);
+            split3d.wide_handle = false;
+            split3d.resize_start_child = true;
+            split3d.resize_end_child = true;
+            split3d.shrink_start_child = false;
+            split3d.shrink_end_child = false;
+            split3d.start_child = view3d;
+            view3d.set_size_request (360, -1);
+            int auto_position = -1;
+            split3d.notify["max-position"].connect (() => {
+                if (auto_position >= 0 && split3d.position != auto_position) return;
+                auto_position = (int) (split3d.max_position * 0.54);
+                split3d.position = auto_position;
+            });
+            work_stack.add_named (split3d, "3d");
             var box3d = new Box (Orientation.VERTICAL, 0);
             panel3d_stack = new Stack ();
             panel3d_stack.vhomogeneous = false;
-            garment_panel = new GarmentPanel (project, view3d);
+            garment_panel = new GarmentPanel (project, view3d, garment_canvas);
+            pattern_side = with_palette (garment_canvas, garment_panel.palette);
+            pattern_side.set_size_request (360, -1);
+            split3d.end_child = pattern_side;
+            garment_canvas.message.connect ((m) => add_toast (new Toast (m)));
             garment_panel.message.connect ((m) => add_toast (new Toast (m)));
             product_panel = new ProductPanel (project, history, view3d);
             product_panel.message.connect ((m) => add_toast (new Toast (m)));
@@ -335,6 +357,7 @@ namespace Singularity.Apps.Atelier {
             string start3d = project.trade == "product" || project.trade == "automotive" ? "product" : "garment";
             mode3d_switch.set_active (start3d);
             panel3d_stack.visible_child_name = start3d;
+            pattern_side.visible = start3d == "garment";
             side_stack.add_named (box3d, "3d");
             Idle.add (() => {
                 sketch_canvas.fit_all ();
@@ -384,6 +407,7 @@ namespace Singularity.Apps.Atelier {
             if (mode3d_switch.active_option != n) mode3d_switch.set_active (n);
             if (panel3d_stack.visible_child_name == n) return;
             panel3d_stack.visible_child_name = n;
+            pattern_side.visible = n == "garment";
             if (n == "garment") garment_panel.refresh ();
             else product_panel.refresh ();
             view3d.reset_camera ();
@@ -419,6 +443,10 @@ namespace Singularity.Apps.Atelier {
             if (name == "3d") {
                 if (panel3d_stack.visible_child_name == "garment") {
                     garment_panel.refresh ();
+                    Idle.add (() => {
+                        garment_canvas.fit_all ();
+                        return Source.REMOVE;
+                    });
                     if (pattern_dirty) {
                         pattern_dirty = false;
                         garment_panel.sync_pattern ();

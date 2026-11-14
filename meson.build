@@ -136,6 +136,7 @@ ui = files(
   'src/ui/flats_panel.vala',
   'src/ui/techpack_view.vala',
   'src/ui/view3d.vala',
+  'src/ui/garment_canvas.vala',
   'src/ui/garment_panel.vala',
   'src/ui/product_panel.vala',
   'src/ui/library_panel.vala',

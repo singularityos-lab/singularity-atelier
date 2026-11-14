@@ -312,6 +312,21 @@ namespace Singularity.Apps.Atelier {
                 case "garment":
                     win.show_workspace ("3d");
                     return 800;
+                case "gtool":
+                    win.garment_canvas.choose_tool (a[1]);
+                    return 200;
+                case "gclick":
+                    win.garment_canvas.click_at (point (a[1]));
+                    return 300;
+                case "gfit":
+                    win.garment_canvas.fit_all ();
+                    return 300;
+                case "gstate":
+                    printerr ("script: garment tool %s seams %d selected seam %d piece %s\n", win.garment_canvas.tool, win.project.garment.seams.size, win.garment_canvas.selected_seam, win.garment_canvas.selected_piece);
+                    return 100;
+                case "gdelete":
+                    win.garment_canvas.delete_selected_seam ();
+                    return 300;
                 case "simulate":
                     if (win.garment_panel != null) win.garment_panel.simulate_for (int.parse (a[1]));
                     return 600;

@@ -86,6 +86,11 @@ def main():
             idx = np.nonzero(np.abs(d).sum(axis=1) > 1e-7)[0]
             sparse.append((fn[len("measure-"):-len(".target")], idx, d[idx]))
 
+    for name in ("breast-point-decr", "breast-point-incr"):
+        d = target("breast", name + ".target")
+        idx = np.nonzero(np.abs(d).sum(axis=1) > 1e-7)[0]
+        sparse.append((name, idx, d[idx]))
+
     bones = list(skel["bones"])
     order, placed = [], set()
     while len(order) < len(bones):
