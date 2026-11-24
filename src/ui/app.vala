@@ -2,7 +2,7 @@ using Gtk;
 
 namespace Singularity.Apps.Atelier {
 
-    public class AtelierApp : Singularity.Application {
+    public class AtelierApp : Singularity.Application, Singularity.Migration.Migratable {
         public GLib.Settings? settings;
         private string? new_trade;
 
@@ -166,6 +166,42 @@ namespace Singularity.Apps.Atelier {
                 new_trade = null;
             }
             TestScript.maybe_run (w);
+        }
+
+        public Variant save_model () {
+            return new VariantDict ().end ();
+        }
+
+        public async void restore_model (Variant model) throws Error {
+        }
+
+        public string window_kind (Gtk.Window w) {
+            return (w is AtelierWindow) ? "atelier" : "";
+        }
+
+        public Variant save_window (Gtk.Window w) {
+            return ((AtelierWindow) w).save_migration ();
+        }
+
+        public string[] files () {
+            string[] found = {};
+            foreach (var w in get_windows ()) {
+                var aw = w as AtelierWindow;
+                if (aw == null) continue;
+                foreach (string f in aw.migration_files ()) if (!(f in found)) found += f;
+            }
+            return found;
+        }
+
+        public async Gtk.Window? rebuild_window (string kind, Variant data) throws Error {
+            if (kind != "atelier") return null;
+            foreach (var old in get_windows ().copy ()) {
+                var aw = old as AtelierWindow;
+                if (aw != null && aw.is_empty ()) aw.destroy ();
+            }
+            var w = new AtelierWindow (this);
+            w.restore_migration (data);
+            return w;
         }
 
         public override void open (File[] files, string hint) {

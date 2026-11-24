@@ -261,5 +261,27 @@ namespace Singularity.Apps.Atelier {
             redo_stack.clear ();
             changed ();
         }
+
+        public Variant save_state () {
+            keep_images ();
+            var keys = new Gee.ArrayList<string> ();
+            keys.add_all (images.keys);
+            keys.sort ();
+            var kept = new VariantBuilder (new VariantType ("a{say}"));
+            foreach (string k in keys) kept.add ("{s@ay}", k, new Variant.from_bytes (VariantType.BYTESTRING, images[k], true));
+            return new Variant ("(@as@as@a{say})", new Variant.strv (undo_stack.to_array ()), new Variant.strv (redo_stack.to_array ()), kept.end ());
+        }
+
+        public void restore_state (Variant state) {
+            undo_stack.clear ();
+            redo_stack.clear ();
+            foreach (string s in state.get_child_value (0).get_strv ()) undo_stack.add (s);
+            foreach (string s in state.get_child_value (1).get_strv ()) redo_stack.add (s);
+            var it = state.get_child_value (2).iterator ();
+            string id;
+            Variant data;
+            while (it.next ("{s@ay}", out id, out data)) images[id] = data.get_data_as_bytes ();
+            changed ();
+        }
     }
 }

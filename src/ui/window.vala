@@ -392,11 +392,17 @@ namespace Singularity.Apps.Atelier {
             in_btn.clicked.connect (() => canvas.zoom_in ());
             var fit = strip.add_text_button (_("Fit"), _("Fit to Window (Ctrl+0)"));
             fit.clicked.connect (() => activate_action ("zoom-fit", null));
+            uint labels_pending = 0;
             canvas.drawn.connect (() => {
-                string t = canvas.status_text ();
-                if (status.label != t) status.label = t;
-                string z = "%d%%".printf ((int) Math.round (canvas.zoom * 100));
-                if (zoom.label != z) zoom.label = z;
+                if (labels_pending != 0) return;
+                labels_pending = Idle.add (() => {
+                    labels_pending = 0;
+                    string t = canvas.status_text ();
+                    if (status.label != t) status.label = t;
+                    string z = "%d%%".printf ((int) Math.round (canvas.zoom * 100));
+                    if (zoom.label != z) zoom.label = z;
+                    return Source.REMOVE;
+                });
             });
             box.append (bar);
             return box;
@@ -560,6 +566,97 @@ namespace Singularity.Apps.Atelier {
                 } catch (Error e) {
                     show_error (_("Could Not Save"), e.message);
                 }
+            });
+        }
+
+        public Variant save_migration () {
+            var d = new VariantDict ();
+            d.insert_value ("workspace", new Variant.string (workspace));
+            if (project == null) return d.end ();
+            var layers = new Gee.ArrayList<SketchLayer> ();
+            foreach (var l in project.sketch.all_layers ()) if (l.kind == LayerKind.IMAGE && l.image_data != null) layers.add (l);
+            layers.sort ((a, b) => strcmp (a.id, b.id));
+            var images = new VariantBuilder (new VariantType ("a{say}"));
+            foreach (var l in layers) images.add ("{s@ay}", l.id, new Variant.from_bytes (VariantType.BYTESTRING, l.image_data, true));
+            string path = project.path != null ? Singularity.Migration.portable_path (File.new_for_path (project.path)) : "";
+            d.insert_value ("project", new Variant ("(s@a{say}ssb)", NativeFormat.to_json (project), images.end (), path, project.title, project.modified));
+            d.insert_value ("history", history.save_state ());
+            d.insert_value ("pattern-mode", new Variant.string (pattern_canvas.mode));
+            d.insert_value ("mode-3d", new Variant.string (mode_3d));
+            var views = new VariantBuilder (new VariantType ("a(sdddds)"));
+            views.add ("(sdddds)", "sketch", sketch_canvas.zoom, sketch_canvas.pan_x, sketch_canvas.pan_y, sketch_canvas.rotation, sketch_canvas.tool);
+            views.add ("(sdddds)", "pattern", pattern_canvas.zoom, pattern_canvas.pan_x, pattern_canvas.pan_y, pattern_canvas.rotation, pattern_canvas.tool);
+            views.add ("(sdddds)", "flats", flats_canvas.zoom, flats_canvas.pan_x, flats_canvas.pan_y, flats_canvas.rotation, flats_canvas.tool);
+            views.add ("(sdddds)", "garment", garment_canvas.zoom, garment_canvas.pan_x, garment_canvas.pan_y, garment_canvas.rotation, garment_canvas.tool);
+            d.insert_value ("views", views.end ());
+            return d.end ();
+        }
+
+        public string[] migration_files () {
+            if (project == null || project.path == null) return {};
+            return { Singularity.Migration.portable_path (File.new_for_path (project.path)) };
+        }
+
+        public void restore_migration (Variant data) throws Error {
+            var d = new VariantDict (data);
+            string ws = (d.lookup_value ("workspace", VariantType.STRING) ?? new Variant.string ("sketch")).get_string ();
+            var saved = d.lookup_value ("project", new VariantType ("(sa{say}ssb)"));
+            if (saved == null) {
+                workspace = ws;
+                return;
+            }
+            var p = NativeFormat.from_json (saved.get_child_value (0).get_string ());
+            var images = saved.get_child_value (1);
+            foreach (var l in p.sketch.all_layers ()) {
+                var bytes = images.lookup_value (l.id, VariantType.BYTESTRING);
+                if (l.kind == LayerKind.IMAGE && bytes != null) l.image_data = bytes.get_data_as_bytes ();
+            }
+            string path = saved.get_child_value (2).get_string ();
+            p.path = path != "" ? Singularity.Migration.local_file (path).get_path () : null;
+            p.title = saved.get_child_value (3).get_string ();
+            workspace = ws;
+            load_project (p);
+            var past = d.lookup_value ("history", new VariantType ("(asasa{say})"));
+            if (past != null) history.restore_state (past);
+            p.modified = saved.get_child_value (4).get_boolean ();
+            update_title ();
+            string mode = (d.lookup_value ("pattern-mode", VariantType.STRING) ?? new Variant.string (pattern_canvas.mode)).get_string ();
+            if (mode != pattern_canvas.mode) pattern_canvas.switch_mode (mode);
+            show_3d_mode ((d.lookup_value ("mode-3d", VariantType.STRING) ?? new Variant.string (mode_3d)).get_string ());
+            var views = d.lookup_value ("views", new VariantType ("a(sdddds)"));
+            if (views == null) return;
+            Idle.add (() => {
+                var it = views.iterator ();
+                string name, tool;
+                double zoom, pan_x, pan_y, rotation;
+                while (it.next ("(sdddds)", out name, out zoom, out pan_x, out pan_y, out rotation, out tool)) {
+                    ZoomCanvas? canvas = null;
+                    switch (name) {
+                        case "sketch":
+                            canvas = sketch_canvas;
+                            sketch_canvas.tool = tool;
+                            break;
+                        case "pattern":
+                            canvas = pattern_canvas;
+                            pattern_canvas.tool = tool;
+                            break;
+                        case "flats":
+                            canvas = flats_canvas;
+                            flats_canvas.tool = tool;
+                            break;
+                        case "garment":
+                            canvas = garment_canvas;
+                            garment_canvas.tool = tool;
+                            break;
+                    }
+                    if (canvas == null) continue;
+                    canvas.zoom = zoom;
+                    canvas.pan_x = pan_x;
+                    canvas.pan_y = pan_y;
+                    canvas.rotation = rotation;
+                    canvas.queue_draw ();
+                }
+                return Source.REMOVE;
             });
         }
 
